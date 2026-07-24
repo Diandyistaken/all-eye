@@ -56,6 +56,10 @@ _NIM_DELETE = 2
 _NIF_MESSAGE = 0x01
 _NIF_ICON = 0x02
 _NIF_TIP = 0x04
+_NIF_INFO = 0x10          # balon bildirimi (szInfo/szInfoTitle) icin
+_NIIF_INFO = 0x01
+_NIIF_WARNING = 0x02
+_NIIF_NOSOUND = 0x10      # sessiz balon: araya giren asistan olmasin diye
 
 _MF_STRING = 0x0000
 _MF_SEPARATOR = 0x0800
@@ -414,6 +418,28 @@ class Tray:
         self._hicon = new_icon
         if old_icon:
             w.DestroyIcon(old_icon)
+
+    def notify_balloon(self, title: str, msg: str, warning: bool = False) -> None:
+        """Tepsi balonu goster (NIM_MODIFY + NIF_INFO). create() sonrasi cagrilir.
+
+        Sessiz (NIIF_NOSOUND): daemon'un 'araya girmez, sadece haber verir'
+        ilkesiyle uyumlu. Windows balonlari kisa omurlu ve Action Center
+        ayarlarina tabidir - gorunecegi garanti degil, o yuzden sessizce
+        basarisiz olur (tray.py'nin geri kalaniyla ayni ruh).
+        """
+        if not self._created:
+            return
+        w = self._w
+        self._nid.uFlags = _NIF_MESSAGE | _NIF_ICON | _NIF_TIP | _NIF_INFO
+        self._nid.szInfoTitle = title[:63]
+        self._nid.szInfo = msg[:255]
+        self._nid.dwInfoFlags = (_NIIF_WARNING if warning else _NIIF_INFO) | _NIIF_NOSOUND
+        try:
+            w.Shell_NotifyIconW(_NIM_MODIFY, ctypes.byref(self._nid))
+        except Exception:
+            pass
+        # uFlags'i eski haline al ki sonraki set_state balonu tekrar tetiklemesin.
+        self._nid.uFlags = _NIF_MESSAGE | _NIF_ICON | _NIF_TIP
 
     def pump(self) -> None:
         """BLOKLAMAYAN: bekleyen tray mesajlarini isle, kuyruktaki callback'leri cagir.

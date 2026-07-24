@@ -118,6 +118,14 @@ alleye teach "çözüm: PATH'e ekle"     # az önce takıldığın duvara kendi 
 alleye walls                          # en çok çarptığın duvarlar + kendi notların
 ```
 
+```bash
+alleye calibrate                      # yanlış alarm oranını ölç, eşik öner
+```
+
+```bash
+alleye calibrate --apply              # önerilen eşikleri config.json'a yaz
+```
+
 Kısayola bastığında cevap, imlecin yanında çerçevesiz bir pencerede belirir
 (Esc = kapat, Enter = kademe derinleştir). Pencere odağı çalmaz; kapanınca
 eski pencerene dönersin. `--tray` ile konsol penceresi hiç görünmez.
@@ -183,6 +191,9 @@ Başlat menüsünden PowerShell).
 
 - Her şey yerelde: `%LOCALAPPDATA%\AllEye\`
 - Buluta yalnızca modele giden bağlam gider ve **önce redaksiyondan geçer**
+- Pano izleyici (Faz 2) panonu **buluta yollamaz** — sadece yerelde son hatayla
+  karşılaştırır ve yalnızca hata-benzeri metni işler. Kapatmak için:
+  `config.json` → `"clipboard_watch": false`
 - Tamamen çevrimdışı çalışmak için `config.json` → `"providers": ["ollama"]`
 - `ollama pull qwen2.5-coder:7b` — 6 GB VRAM'e sığar, hiçbir veri makineden çıkmaz
 
@@ -254,5 +265,6 @@ alleye status
 
 Fazlar, görevler, bitti kriterleri ve karar günlüğü: **[ROADMAP.md](ROADMAP.md)**
 
-Faz 1 tamamlandı (tepsi ikonu · otomatik başlatma · cevap penceresi · teach/walls).
-Sıradaki iş: Faz 2 — tetikleyiciyi genişlet (pasif tespit v2, sesli çağrı).
+Faz 1-2 tamamlandı (tepsi · otomatik başlatma · cevap penceresi · teach/walls ·
+pasif tespit v2 · pano izleyici · calibrate).
+Sıradaki iş: Faz 3 — terminal dışı bağlam (aktif pencere, son çare ekran görüntüsü).

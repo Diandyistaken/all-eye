@@ -63,9 +63,17 @@ DEFAULTS: dict = {
         "repeat_threshold": 3,     # ayni komut kac kez tekrarlarsa sinyal
         "fail_streak": 3,          # ust uste kac hata sinyal sayilir
         "stagnation_minutes": 20,  # ilerleme yok sayilan sure
+        # Faz 2.1 pasif tespit v2:
+        "slowdown_factor": 2.5,    # komut araligi eskisinin kac kati olursa yavaslama
+        "loop_window_s": 90,       # ayni komut+ayni hata ardisik denemeler arasi ust sinir
     },
     "redact": True,   # buluta gitmeden once sirlari maskele
     "language": "tr",
+    # Pano izleyici (Faz 2): bir hatayi panoya kopyalayinca "aramaya gidiyorsun"
+    # sinyali. Pano metni ASLA buluta gitmez - sadece yerelde son hatayla
+    # karsilastirilir ve yalniz hata-benzeri metin islenir. Gizlilik icin
+    # kapatilabilir: false yap.
+    "clipboard_watch": True,
     # Cevap penceresi (Faz 1.3, alleye/window.py). tkinter ile, sifir bagimlilik.
     # window.py bu blok olmadan da varsayilanlarla calisir; buraya konmasi
     # kullaniciya ayar noktasi verir.

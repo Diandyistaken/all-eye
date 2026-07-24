@@ -27,13 +27,20 @@ Son güncelleme: 2026-07-24
 | Otomatik başlatma | ✅ | `autostart --enable` Startup kısayolu (Faz 1.2) |
 | Cevap penceresi | ✅ | tkinter, çerçevesiz, imleç yanı, Esc/Enter (Faz 1.3) |
 | teach / walls | ✅ | duvarı kapat, kendi notunu önce göster (Faz 1.4) |
+| Pasif tespit v2 | ✅ | yavaslama + dongu + pano-arama sinyalleri (Faz 2.1) |
+| Pano izleyici | ✅ | hatayı kopyalayınca sinyal, buluta gitmez (Faz 2.1) |
+| calibrate | ✅ | yanlış alarm oranı + eşik ayarı (Faz 2.1) |
+| Tepsi balonu | ✅ | sinyalde sessiz "takıldın gibi" bildirimi |
 
-**Faz 1 tamamlandı (2026-07-24)** — 4 alt görev paralel ajanlarla yazıldı,
-senior lead denetiminden geçti (bir KRİTİK SQLite thread hatası yakalanıp
-düzeltildi), 226 test yeşil.
+**Faz 1 tamamlandı (2026-07-24)** — 4 alt görev paralel ajanlarla, senior lead
+denetiminden geçti (bir KRİTİK SQLite thread hatası yakalandı), 226 test.
+
+**Faz 2 tamamlandı (2026-07-25)** — pasif tespit v2 + pano izleyici + calibrate,
+3 paralel ajan, 263 test yeşil. Ses tetikleyici sıfır-bağımlılık kuralı için
+ertelendi (yerine pano izleyici).
 
 **Bilinen sınırlar:** bash'te komut çıktısı yakalanmıyor · terminal dışı hiçbir
-bağlam yok (Faz 3) · pasif tespit sinyalleri hâlâ kaba (Faz 2.1).
+bağlam yok (Faz 3) · sesli çağrı yok (bağımlılık nedeniyle ertelendi).
 
 ---
 
@@ -120,31 +127,32 @@ gösterir; Esc ile kapanır. tkinter yoksa konsol yoluna nazikçe düşer.
 
 ---
 
-## Faz 2 — Tetikleyiciyi genişlet
+## Faz 2 — Tetikleyiciyi genişlet ✅ (2026-07-25)
 
 **Amaç:** Kısayola basmayı unuttuğun anları yakalamak.
 
-**Tahmini:** 2 oturum
+**Nasıl yapıldı:** 3 paralel ajan (sonnet), paylaşılan sözleşme, minimal test;
+çakışan dosyalar (cli/daemon/config/tray) tek elden birleştirildi, denetim
+koordinatörde. Ses tetikleyici ertelendi (aşağıya bak).
 
-### 2.1 Pasif tespit v2
-Şu anki sinyaller kaba. Gerçek "zorlanma" daha ince.
+### 2.1 Pasif tespit v2 ✅
+- [x] Kaydet-çalıştır-hata döngüsü → `dongu` sinyali (aynı komut+aynı hata, kısa aralık)
+- [x] Komutlar arası süre uzuyor → `yavaslama` sinyali (düşünme/arama süresi)
+- [x] Aynı hatanın panoya kopyalanması → `pano-arama` sinyali (`clipboard.py`, ctypes)
+- [x] `alleye calibrate` — yanlış alarm oranını ölçer, eşik önerir/uygular
+- [x] **Fikir eklendi:** tepsi balon bildirimi — sinyalde sessiz "takıldın gibi" balonu
 
-- [ ] Aynı dosyayı tekrar tekrar kaydetme (kaydet-çalıştır-hata döngüsü)
-- [ ] Komutlar arası süre uzuyor (düşünme/arama süresi artıyor)
-- [ ] Aynı hata mesajının panoya kopyalanması (= aramaya gidiyorsun)
-- [ ] Sinyal ağırlıklarını kendi verinle kalibre et: `alleye calibrate`
+**Bitti kriteri:** `alleye calibrate` yanlış alarm oranını raporluyor,
+`--apply` ile sadece değişen eşikleri config.json'a yazıyor. Canlı doğrulandı.
 
-**Bitti kriteri:** Bir hafta kullan, `alleye calibrate` yanlış alarm oranını
-raporlasın; eşikler otomatik ayarlansın.
+### 2.2 Ses tetikleyici — ERTELENDİ ⏸️
+`openWakeWord` bir pip bağımlılığıdır (onnxruntime + numpy, ~50MB, sürekli
+mikrofon). Bu, **"sıfır bağımlılık, süreç 60-80MB"** demir kuralını bozar.
+Karar (2026-07-25): sesi ertele; Faz 2'nin amacına ("unuttuğun anı yakala")
+bağımlılıksız hizmet eden **pano izleyici** ile karşıla. Ses ileride ancak
+opsiyonel bir extra olarak (çekirdeği kirletmeden) düşünülebilir.
 
-### 2.2 Ses tetikleyici
-- [ ] openWakeWord (tamamen yerel, birkaç MB, CPU'da çalışır)
-- [ ] "all eye" uyandırma kelimesi
-- [ ] Mikrofon **sadece** uyandırma kelimesi arar; kayıt yok, buluta gitmez
-- [ ] `alleye watch --voice`, varsayılan **kapalı**
-
-**Bitti kriteri:** Klavyeye dokunmadan "all eye" de, cevap gelsin.
-Yanlış tetiklenme günde 1'den az.
+- [ ] (ertelendi) openWakeWord "all eye" uyandırma kelimesi — çekirdek dışı extra
 
 ---
 
@@ -240,7 +248,9 @@ alleye/
 ├── tray.py              ✅ Faz 1.1  sistem tepsisi (ctypes Shell_NotifyIcon)
 ├── window.py            ✅ Faz 1.3  cevap penceresi (tkinter, stdlib)
 ├── autostart.py         ✅ Faz 1.2  başlangıçta çalıştır (Startup .lnk)
-├── voice.py             ⬜ Faz 2.2  openWakeWord
+├── clipboard.py         ✅ Faz 2.1  pano izleyici (ctypes, hata-arama sinyali)
+├── calibrate.py         ✅ Faz 2.1  yanlış alarm oranı + eşik ayarı
+├── voice.py             ⏸️ Faz 2.2  openWakeWord — ertelendi (pip bağımlılığı)
 ├── vision.py            ⬜ Faz 3.2  pencere görüntüsü + vision
 └── box.py               ⬜ Faz 5    HTB oturum yönetimi
 ```
@@ -285,6 +295,9 @@ Neden böyle yapıldığını unutmamak için. Bunlar tartışılıp karara bağ
 | Cevap penceresi tkinter, pywebview değil | pywebview pip bağımlılığıdır; "sıfır bağımlılık" demir kuralını bozar. tkinter Python'la gelir. ROADMAP metni burada kendi kuralıyla çelişiyordu; kural kazandı. |
 | Faz 1 paralel ajanlar + senior lead | Bağımsız 4 alt görev aynı anda ayrı ajanlarda; paylaşılan sözleşme imzaları hizaladı, çakışan dosyalar tek elden birleşti, senior lead uyumu denetledi (bir KRİTİK SQLite hatası böyle yakalandı). |
 | Pencere yolunda thread-başına SQLite | `show_answer` cevabı ayrı worker thread'de akıtıyor; sqlite bağlantısı oluşturulduğu thread'e bağlı, paylaşılırsa `ProgrammingError`. Bağlam ana thread'de, kayıt worker thread'de kendi bağlantısıyla. |
+| Ses tetikleyici ertelendi (Faz 2.2) | openWakeWord = onnxruntime + numpy + sürekli mikrofon; "sıfır bağımlılık / 60-80MB" kuralını bozar. Amaca (unuttuğun anı yakala) bağımlılıksız pano izleyiciyle ulaşıldı. |
+| Pano izleyici buluta hiçbir şey yollamaz | Pano metni yalnızca yerelde son hatayla karşılaştırılır; sadece `looks_like_error` olan metin işlenir (şifre değil). `config.clipboard_watch: false` ile kapatılır — gizlilik kontrolü kullanıcıda. |
+| `calibrate --apply` sadece değişen anahtarı yazar | `install config.json yazmaz` kuralıyla aynı gerekçe: tüm DEFAULTS'u dondurmak sonraki sürüm düzeltmelerini kullanıcıya ulaştırmaz. Mevcut config oku-birleştir-yaz. |
 
 ---
 
@@ -295,4 +308,4 @@ Neden böyle yapıldığını unutmamak için. Bunlar tartışılıp karara bağ
 3. Faz bitince bu dosyada işaretle, karar günlüğüne yeni kararları ekle
 4. Sonraki faza geçmeden teknik borç listesine bak
 
-Sıradaki iş: **Faz 2.1 — pasif tespit v2** (Faz 1 tamamlandı).
+Sıradaki iş: **Faz 3 — terminal dışı bağlam** (Faz 1 ve Faz 2 tamamlandı).

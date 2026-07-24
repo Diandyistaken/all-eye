@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -489,6 +490,63 @@ def cmd_walls(args: argparse.Namespace) -> int:
     return 0
 
 
+# --------------------------------------------------------------- calibrate ---
+
+def cmd_calibrate(args: argparse.Namespace) -> int:
+    """Journal'a bakip esik onerisi cikar; --apply ile SADECE degisen esikleri yaz."""
+    from alleye import calibrate
+
+    ui.init()
+    cfg = config.load()
+    ui.banner("kalibrasyon")
+
+    turns = journal.read(limit=args.history)
+    if not turns:
+        ui.warn("gunluk bos - once birkac komut calistir")
+        return 1
+
+    stats = calibrate.analyze_history(turns, cfg)
+    ui.note(f"{stats['windows']} pencere tarandi (son {len(turns)} komut)")
+    ui.note(f"sinyal basladigi an: {stats['signals']} · takildin: {stats['stuck']}")
+    ui.note(f"kendi cozmus (olasi yanlis alarm): {stats['self_resolved']}")
+    if stats["stuck"]:
+        ui.note(f"yanlis alarm orani: %{stats['rate'] * 100:.0f}")
+    ui.rule()
+
+    suggestions = calibrate.suggest_thresholds(stats, cfg)
+    if not suggestions:
+        ui.ok("mevcut esikler veriyle uyumlu gorunuyor - degisiklik onerilmiyor")
+        return 0
+
+    cur = cfg["detect"]
+    for key, val in suggestions.items():
+        ui.note(f"  {key}: {cur.get(key)} -> {val}")
+
+    if not args.apply:
+        ui.rule()
+        ui.note("uygulamak icin:  alleye calibrate --apply")
+        return 0
+
+    # SADECE degisen detect anahtarlarini yaz: mevcut config.json'u oku,
+    # birlestir, geri yaz. config.DEFAULTS'u komple diske dondurmuyoruz -
+    # "install config.json yazmaz" kuralinin sebebi ayni: sonraki surum
+    # duzeltmeleri (esik ayarlari) kullaniciya ulasamaz hale gelir.
+    user_cfg = {}
+    if config.CONFIG_FILE.exists():
+        try:
+            user_cfg = json.loads(config.CONFIG_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            ui.warn("mevcut config.json bozuk, sifirdan yaziliyor")
+    detect_block = dict(user_cfg.get("detect", {}))
+    detect_block.update(suggestions)
+    user_cfg["detect"] = detect_block
+    config.HOME.mkdir(parents=True, exist_ok=True)
+    config.CONFIG_FILE.write_text(
+        json.dumps(user_cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    ui.ok(f"yazildi: {config.CONFIG_FILE}")
+    return 0
+
+
 # -------------------------------------------------------------------- main ---
 
 def build_parser() -> argparse.ArgumentParser:
@@ -554,6 +612,11 @@ def build_parser() -> argparse.ArgumentParser:
     wl.add_argument("--limit", type=int, default=15, help="kac duvar gosterilsin")
     wl.set_defaults(func=cmd_walls)
 
+    c = sub.add_parser("calibrate", help="journal'a bakip esik oner (--apply ile yaz)")
+    c.add_argument("--apply", action="store_true", help="onerilen esikleri config.json'a yaz")
+    c.add_argument("--history", type=int, default=300, help="taranacak son komut sayisi")
+    c.set_defaults(func=cmd_calibrate)
+
     return p
 
 
@@ -561,7 +624,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
     known = {"ask", "status", "doctor", "install", "watch", "key", "forget",
-             "autostart", "teach", "walls",
+             "autostart", "teach", "walls", "calibrate",
              "-h", "--help", "--version"}
     # Ciplak `alleye` veya `alleye neden calismiyor` -> ask varsayilani
     if not argv or argv[0] not in known:

@@ -12,7 +12,7 @@ import platform
 import threading
 import time
 
-from alleye import config, detect, ui
+from alleye import clipboard, config, detect, ui
 
 MOD = {"alt": 0x0001, "ctrl": 0x0002, "control": 0x0002,
        "shift": 0x0004, "win": 0x0008}
@@ -186,25 +186,52 @@ def _answer_window(trigger: str) -> bool:
         return False
 
 
+def _announce(text: str, on_signal) -> None:
+    """Pasif sinyali bildir: konsola yaz, gorev cubugunda yanip son, tray'e isaret."""
+    when = time.strftime("%H:%M")
+    ui.warn(f"{when} · {text}")
+    ui.note(f"       hazir oldugunda {config.load()['hotkey']}")
+    _flash()
+    if on_signal is not None:
+        # Tray thread'ine degil, ana dongude islensin diye sadece isaret birak
+        # (Shell_NotifyIcon'u olusturan thread'de cagirmak guvenli).
+        try:
+            on_signal()
+        except Exception:
+            pass
+
+
 def _passive_loop(interval: float, stop: threading.Event, on_signal=None) -> None:
     seen: set[str] = set()
+    last_clip = ""
+    # Pano izleyici varsayilan acik ama config'ten kapatilabilir (gizlilik).
+    clip_ready = clipboard.available() and config.load().get("clipboard_watch", True)
     while not stop.wait(interval):
         try:
-            signals, _ = detect.watch_tick(seen)
+            signals, turns = detect.watch_tick(seen)
         except Exception:
             continue
         if signals and detect.is_stuck(signals):
-            when = time.strftime("%H:%M")
-            ui.warn(f"{when} · {detect.summarize(signals)}")
-            ui.note(f"       hazir oldugunda {config.load()['hotkey']}")
-            _flash()
-            if on_signal is not None:
-                # Tray thread'ine degil, ana dongude islensin diye sadece isaret
-                # birak (Shell_NotifyIcon'u olusturan thread'de cagirmak guvenli).
+            _announce(detect.summarize(signals), on_signal)
+
+        # Pano izleyici (Faz 2, alleye/clipboard.py): ses tetikleyicisinin
+        # bagimliliksiz alternatifi. Kullanici bir hatayi panoya kopyaladiysa
+        # buyuk olasilikla onu aramaya gidiyor = dolayli takilma sinyali.
+        if clip_ready:
+            try:
+                clip = clipboard.read_text()
+            except Exception:
+                clip = ""
+            if clip and clip != last_clip:  # bir oncekiyle ayniysa tekrar sinyal verme
+                last_clip = clip
                 try:
-                    on_signal()
+                    sig = clipboard.clipboard_signal(clip, turns)
                 except Exception:
-                    pass
+                    sig = None
+                if sig is not None:
+                    _announce(str(sig), on_signal)
+            elif not clip:
+                last_clip = ""
 
 
 def run(hotkey_only: bool = False, interval: float = 20.0,
@@ -348,6 +375,10 @@ def run(hotkey_only: bool = False, interval: float = 20.0,
                 if tray_obj is not None:
                     if signal_pending["on"]:
                         tray_obj.set_state("sinyal")
+                        # Konsol gizliyken kullanicinin tek gorunur ipucu bu balon.
+                        # Sessiz (NIIF_NOSOUND) - araya girmez, sadece haber verir.
+                        tray_obj.notify_balloon("takildin gibi gorunuyor",
+                                                f"{spec} ile sor")
                         signal_pending["on"] = False
                     tray_obj.pump()
                 time.sleep(0.03)

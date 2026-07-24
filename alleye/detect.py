@@ -77,6 +77,43 @@ def analyze(turns: list[Turn], cfg: dict | None = None) -> list[Signal]:
         signals.append(Signal("asili-kalmis", 1,
                               f"{recent[-1].age_s / 60:.0f} dakika once bir hatada birakilmis"))
 
+    # 6) Yavaslama: komut araliklari belirgin uzuyorsa (dusunme/arama suresi artiyor).
+    # Son pencereyi ikiye bol (eski yari / yeni yari), ortalama araligi karsilastir.
+    slowdown_factor = cfg.get("slowdown_factor", 2.5)
+    if len(recent) >= 6:
+        deltas = [recent[i].ts - recent[i - 1].ts for i in range(1, len(recent))]
+        half = len(deltas) // 2
+        old_deltas, new_deltas = deltas[:half], deltas[half:]
+        if old_deltas and new_deltas:
+            avg_old = sum(old_deltas) / len(old_deltas)
+            avg_new = sum(new_deltas) / len(new_deltas)
+            # cok kucuk araliklar gurultu sayilir (orn. testte ardisik hizli cagrilar);
+            # anlamli bir karsilastirma icin eski pencere en az yarim saniye olmali.
+            if avg_old >= 0.5 and avg_new >= avg_old * slowdown_factor:
+                signals.append(Signal("yavaslama",
+                    1, f"komut araligi buyudu: onceki ort {avg_old:.0f}sn -> "
+                       f"son ort {avg_new:.0f}sn (~{avg_new / avg_old:.1f}x)"))
+
+    # 7) Kaydet-calistir-hata dongusu: AYNI komut kisa araliklarla tekrarlanip
+    # HER SEFERINDE AYNI hata imzasini veriyorsa - klasik takilma dongusu.
+    # "ayni-hata" sinyalinden farki: burada komut da ayni olmali ve araliklar kisa olmali.
+    loop_window_s = cfg.get("loop_window_s", 90)
+    by_cmd: dict[str, list[Turn]] = {}
+    for t in recent:
+        if t.failed:
+            by_cmd.setdefault(_norm(t.cmd), []).append(t)
+    for cmd, occ in by_cmd.items():
+        if len(occ) < 2:
+            continue
+        occ = sorted(occ, key=lambda t: t.ts)
+        fps = {journal.fingerprint(t) for t in occ}
+        if len(fps) != 1:
+            continue  # farkli hatalar - klasik "kaydet-calistir-hata" dongusu degil
+        gaps = [occ[i].ts - occ[i - 1].ts for i in range(1, len(occ))]
+        if gaps and all(0 <= g <= loop_window_s for g in gaps):
+            signals.append(Signal("dongu", 2,
+                f"'{cmd[:60]}' {len(occ)} kez ayni hatayla kisa araliklarla tekrarlandi"))
+
     signals.sort(key=lambda s: -s.weight)
     return signals
 
