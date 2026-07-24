@@ -66,6 +66,14 @@ DEFAULTS: dict = {
     },
     "redact": True,   # buluta gitmeden once sirlari maskele
     "language": "tr",
+    # Cevap penceresi (Faz 1.3, alleye/window.py). tkinter ile, sifir bagimlilik.
+    # window.py bu blok olmadan da varsayilanlarla calisir; buraya konmasi
+    # kullaniciya ayar noktasi verir.
+    "window": {
+        "font_size": 10,
+        "width": 480,
+        "height": 320,
+    },
     # ctrl+alt+space cok yaygin sekilde baska uygulamalarca tutuluyor.
     # Dolu olursa daemon.FALLBACKS listesinden ilk bos olana kendisi duser.
     "hotkey": "ctrl+alt+e",

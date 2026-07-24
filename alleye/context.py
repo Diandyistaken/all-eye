@@ -31,6 +31,7 @@ class Bundle:
     signature: str = ""
     wall_hits: int = 0
     history: list[str] = field(default_factory=list)
+    user_note: str = ""
     redacted: list[str] = field(default_factory=list)
 
 
@@ -149,6 +150,7 @@ def build(cwd: str | None = None, con=None) -> Bundle:
     if con is not None and b.signature:
         from alleye import store
         b.wall_hits = store.touch_wall(con, b.signature, focus.cmd if focus else "")
+        b.user_note = store.get_note(con, b.signature)
         for row in store.wall_history(con, b.signature, limit=2):
             when = time.strftime("%d.%m %H:%M", time.localtime(row["ts"]))
             b.history.append(f"({when}, seviye {row['level']}) {row['answer'][:400]}")
@@ -174,6 +176,10 @@ def render(b: Bundle, question: str = "") -> str:
         head += ["", "## ZORLANMA SINYALLERI"] + [f"- {s}" for s in b.signals]
     if b.wall_hits >= 2:
         head += ["", f"## TEKRAR UYARISI\nBu ayni duvara {b.wall_hits}. kez carpiyor."]
+    if b.user_note:
+        head += ["", "## SENIN NOTUN",
+                 "Kullanici bu duvari daha once cozup kendi notunu birakti:",
+                 b.user_note]
     if b.history:
         head += ["", "## GECEN SEFER NE SOYLENMISTI"] + [f"- {h}" for h in b.history]
 

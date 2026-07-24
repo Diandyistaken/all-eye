@@ -104,7 +104,9 @@ MUTATIONS: list[tuple[str, str, list[tuple[str, str]], str, bool]] = [
     ("C  recent_files ana klasor korumasi kalkti",
      "alleye/context.py",
      [('    if _is_home_or_root(root):\n        return ""', '    if False:\n        return ""')],
-     "tests.test_context.TestGuards.test_home_directory_returns_empty", True),
+     # test_home_directory_returns_empty gercek home icerigine bagli oldugundan
+     # mutasyonu her makinede yakalayamiyordu; deterministik kilit bu test:
+     "tests.test_context.TestGuards.test_home_guard_actually_skips_walk", True),
 ]
 
 

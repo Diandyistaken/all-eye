@@ -120,7 +120,73 @@ def _answer(trigger: str) -> None:
         ui.error(f"cevap uretilemedi: {exc}")
 
 
-def _passive_loop(interval: float, stop: threading.Event) -> None:
+def _answer_window(trigger: str) -> bool:
+    """Cevabi imlecin yanindaki pencerede goster (Faz 1.3, alleye/window.py).
+
+    Konsol yolu (_answer) aynen durur; bu ek bir sunum katmani. Pencere yoksa
+    ya da bir sey ters giderse False doner, cagiran konsol yoluna duser.
+    Kademeyi kullanici pencerede Enter ile acar - tikanikligi hazir cevaba
+    cevirme kurali burada da gecerli.
+    """
+    try:
+        from alleye import context, mentor, store, window
+        from alleye.brain import Router
+
+        if not window.available():
+            return False
+        cfg = config.load()
+        # Baglam ana thread'de kurulur; bu baglantiyi hemen kapatiyoruz. Kayit
+        # (record_ask) ayri bir worker thread'de yapilacagi icin (bkz. _gen)
+        # oraya kendi taze baglantisini acar - sqlite baglantisi olusturuldugu
+        # thread'e baglidir, paylasilirsa sqlite3.ProgrammingError firlatir.
+        con = store.connect()
+        try:
+            b = context.build(con=con)
+        finally:
+            con.close()
+        if not b.turns:
+            return False  # gunluk bos - konsol _answer uyariyi zaten basar
+        rendered = context.render(b, "")
+        level = {"n": 1}
+
+        def _stream_for(lvl: int):
+            router = Router(cfg, deep=lvl >= 3)
+            sys_p = mentor.system_prompt(lvl, cfg["language"])
+            usr_p = mentor.user_prompt(rendered, lvl, "")
+
+            def _gen():
+                if lvl > 1:  # header sabit kaldigindan kademeyi metinde belirt
+                    yield f"KADEME {lvl} ({ {2: 'yon', 3: 'tam cozum'}[lvl] })\n"
+                for chunk in router.stream(sys_p, usr_p):
+                    yield chunk
+                u = router.used
+                # KRITIK: bu generator show_answer tarafindan AYRI worker
+                # thread'de tuketiliyor. Kaydi burada acilan taze baglantiyla yap;
+                # ana thread'in baglantisini kullanmak ProgrammingError firlatir
+                # ve duvar hafizasi sessizce yazilamaz.
+                wcon = store.connect()
+                try:
+                    store.record_ask(wcon, cwd=b.cwd, level=lvl, trigger=trigger,
+                                     signature=b.signature, question="(oto)",
+                                     answer=u.text, provider=u.provider, model=u.model)
+                finally:
+                    wcon.close()
+            return _gen()
+
+        def _on_deepen():
+            if level["n"] >= 3:
+                return None  # kademe bitti - Enter artik bir sey yapmaz
+            level["n"] += 1
+            return _stream_for(level["n"])
+
+        return window.show_answer(_stream_for(1), header=mentor.header(b, 1),
+                                  on_deepen=_on_deepen)
+    except Exception as exc:  # noqa: BLE001 - daemon asla olmemeli, konsola dus
+        ui.error(f"cevap penceresi acilamadi ({exc}); konsol yoluna dusuluyor")
+        return False
+
+
+def _passive_loop(interval: float, stop: threading.Event, on_signal=None) -> None:
     seen: set[str] = set()
     while not stop.wait(interval):
         try:
@@ -132,10 +198,17 @@ def _passive_loop(interval: float, stop: threading.Event) -> None:
             ui.warn(f"{when} · {detect.summarize(signals)}")
             ui.note(f"       hazir oldugunda {config.load()['hotkey']}")
             _flash()
+            if on_signal is not None:
+                # Tray thread'ine degil, ana dongude islensin diye sadece isaret
+                # birak (Shell_NotifyIcon'u olusturan thread'de cagirmak guvenli).
+                try:
+                    on_signal()
+                except Exception:
+                    pass
 
 
 def run(hotkey_only: bool = False, interval: float = 20.0,
-        hotkey: str | None = None, probe: bool = False) -> int:
+        hotkey: str | None = None, probe: bool = False, tray: bool = False) -> int:
     cfg = config.load()
     ui.init()
 
@@ -172,13 +245,87 @@ def run(hotkey_only: bool = False, interval: float = 20.0,
     if not hotkey and spec != cfg["hotkey"]:
         ui.warn(f"{cfg['hotkey']} dolu, {spec} kullaniliyor")
 
-    ui.banner(f"izliyor · {spec} ile cagir · Ctrl+C ile cik")
-    if not hotkey_only:
-        ui.note(f"pasif tespit acik ({interval:.0f}sn) — araya girmez, sadece haber verir")
-
     stop = threading.Event()
+
+    # Tepsi ikonu (Faz 1.1). --tray verilmisse konsolu gizle, sistem tepsisine
+    # tas. tray_obj None ise klasik konsol modu (davranis aynen korunur).
+    tray_mod = None
+    tray_obj = None
+    paused = {"on": False}
+    quit_flag = {"on": False}
+    signal_pending = {"on": False}
+
+    def _invoke(trigger: str) -> None:
+        """Kisayol veya tepsi 'Sor' tetikledi. Once pencere yolu (Faz 1.3),
+        o yoksa konsol yolu. Cevap uretilirken ikon sinyal, bitince sakin.
+
+        Not: "hazir" (yesil) durumu bilerek atlaniyor - cevap uretimi senkron
+        (pencere/konsol acikken dongu blokta), yani "hazir" gorunur bir an
+        bulamaz. state_color'da tanimli; cevap on-uretimi eklenince kullanilacak.
+        """
+        if paused["on"]:
+            return
+        if tray_obj is not None:
+            tray_obj.set_state("sinyal")
+        if not _answer_window(trigger):
+            if tray_obj is not None:
+                tray_mod.show_console()  # konsol gizliyse cevabi gorunur yap
+            _to_front()
+            print()
+            _answer(trigger)
+        if tray_obj is not None:
+            tray_obj.set_state("sakin")
+
+    def _show_status() -> None:
+        if tray_mod is not None:
+            tray_mod.show_console()
+        from alleye.cli import main as cli_main
+        cli_main(["status"])
+
+    if tray:
+        from alleye import tray as _tray_import
+        tray_mod = _tray_import
+        if tray_mod.available():
+            # hide_console + create tek blokta: create patlarsa konsol gizli ve
+            # kisayol kayitli kalmasin diye konsolu geri acip konsol moduna dus.
+            try:
+                tray_mod.hide_console()
+                tray_obj = tray_mod.Tray(
+                    on_ask=lambda: _invoke("tray"),
+                    on_status=_show_status,
+                    on_pause=lambda: paused.__setitem__("on", not paused["on"]),
+                    on_quit=lambda: quit_flag.__setitem__("on", True),
+                    tooltip="all eye",
+                )
+                tray_obj.create()
+                tray_obj.set_state("sakin")
+            except Exception as exc:  # noqa: BLE001 - tepsi sart degil, konsola dus
+                if tray_obj is not None:
+                    try:
+                        tray_obj.destroy()
+                    except Exception:
+                        pass
+                    tray_obj = None
+                tray_mod.show_console()
+                tray_mod = None
+                ui.warn(f"tepsi ikonu kurulamadi ({exc}); konsol modunda devam")
+        else:
+            tray_mod = None
+            ui.warn("tepsi ikonu bu sistemde kullanilamiyor; konsol modunda devam")
+
+    if tray_obj is None:
+        ui.banner(f"izliyor · {spec} ile cagir · Ctrl+C ile cik")
+        if not hotkey_only:
+            ui.note(f"pasif tespit acik ({interval:.0f}sn) — araya girmez, sadece haber verir")
+
     if not hotkey_only:
-        threading.Thread(target=_passive_loop, args=(interval, stop), daemon=True).start()
+        # Tray modunda sinyali tray thread'inden degil ana dongude isle: sadece
+        # bayrak birak, Shell_NotifyIcon'u olusturan thread rengi degistirsin.
+        # Duraklat aciksa pasif sinyal ikonu turuncuya cevirmesin.
+        on_sig = (lambda: None if paused["on"]
+                  else signal_pending.__setitem__("on", True)) if tray_obj else None
+        threading.Thread(target=_passive_loop, args=(interval, stop, on_sig),
+                         daemon=True).start()
 
     class MSG(ctypes.Structure):
         _fields_ = [("hwnd", ctypes.c_void_p), ("message", ctypes.c_uint),
@@ -192,14 +339,26 @@ def run(hotkey_only: bool = False, interval: float = 20.0,
             # PeekMessage + kisa uyku: GetMessage bloklarsa Ctrl+C islenmiyor.
             if u32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
                 if msg.message == WM_HOTKEY:
-                    _to_front()
-                    print()
-                    _answer("hotkey")
+                    _invoke("hotkey")
+                elif tray_obj is not None:
+                    # Tepsi penceresine gelen mesajlar (WM_HOTKEY degil) WndProc'a.
+                    u32.TranslateMessage(ctypes.byref(msg))
+                    u32.DispatchMessageW(ctypes.byref(msg))
             else:
+                if tray_obj is not None:
+                    if signal_pending["on"]:
+                        tray_obj.set_state("sinyal")
+                        signal_pending["on"] = False
+                    tray_obj.pump()
                 time.sleep(0.03)
+            if quit_flag["on"]:
+                break
     except KeyboardInterrupt:
         print()
     finally:
         stop.set()
         u32.UnregisterHotKey(None, 1)
+        if tray_obj is not None:
+            tray_obj.destroy()
+            tray_mod.show_console()
     return 0

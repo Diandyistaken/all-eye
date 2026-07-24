@@ -94,6 +94,46 @@ def resolve_wall(con: sqlite3.Connection, signature: str, note: str = "") -> Non
     con.commit()
 
 
+def last_wall(con: sqlite3.Connection) -> sqlite3.Row | None:
+    """En son carpilan duvar (last_ts en yeni). `teach` bunu hedefler.
+
+    Siralama last_ts'e gore olmali; hits'e gore olsa 'en cok carptigin' duvari
+    dondurur ve kullanici az once takildigi duvara not birakamaz.
+    """
+    return con.execute(
+        "SELECT * FROM walls ORDER BY last_ts DESC LIMIT 1"
+    ).fetchone()
+
+
+def get_note(con: sqlite3.Connection, signature: str) -> str:
+    """Bu imza icin daha once birakilmis kullanici notu; yoksa "".
+
+    resolved bayragina bakmaz: duvara yeniden carpilinca touch_wall resolved'i
+    0'a ceker ama notu silmez; asil deger de o tekrar aninda notu gostermek.
+    """
+    if not signature:
+        return ""
+    row = con.execute("SELECT note FROM walls WHERE signature=?", (signature,)).fetchone()
+    if row is None:
+        return ""
+    return row["note"] or ""
+
+
+def teach_wall(con: sqlite3.Connection, signature: str, note: str) -> bool:
+    """Duvari cozulmus isaretle ve notu yaz. Bir satir guncellendiyse True.
+
+    Imza bilinmiyorsa (henuz hic carpilmamis) False doner - cagiran taraf
+    'once bir hataya takil' diyebilsin.
+    """
+    if not signature:
+        return False
+    cur = con.execute(
+        "UPDATE walls SET resolved=1, note=? WHERE signature=?", (note, signature)
+    )
+    con.commit()
+    return cur.rowcount > 0
+
+
 def top_walls(con: sqlite3.Connection, limit: int = 10) -> list[sqlite3.Row]:
     return con.execute(
         "SELECT signature, hits, cmd, first_ts, last_ts, resolved FROM walls"

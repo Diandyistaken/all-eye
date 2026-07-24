@@ -45,6 +45,14 @@ def cmd_ask(args: argparse.Namespace) -> int:
     level = max(1, min(3, args.level))
     rendered = context.render(b, question)
 
+    # Bu duvari daha once kendisi cozup not birakmissa (alleye teach), mentorun
+    # cevabindan ONCE kendi notunu goster - kendi ogrendigin en iyi cevaptir.
+    if b.user_note:
+        ui.banner("senin notun")
+        ui.note(b.user_note)
+        ui.note("(bunu sen ogrettin; mentorun yorumu asagida)")
+        ui.rule()
+
     while True:
         ui.banner(mentor.header(b, level))
         if b.signals and level == 1:
@@ -318,6 +326,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     ui.note(f"config: {config.CONFIG_FILE if config.CONFIG_FILE.exists() else '(varsayilan)'}")
     ui.note(f"anahtar dosyasi: {config.ENV_FILE}")
 
+    from alleye import autostart as _autostart
+    ui.note(f"autostart: {'acik' if _autostart.is_enabled() else 'kapali'}")
+
     ui.rule()
     ui.note("dosyadan okunan anahtarlar:")
     for env in ("GEMINI_API_KEY", "GROQ_API_KEY"):
@@ -397,7 +408,85 @@ def cmd_watch(args: argparse.Namespace) -> int:
     from alleye.daemon import run
 
     return run(hotkey_only=args.hotkey_only, interval=args.interval,
-               hotkey=args.hotkey, probe=args.probe)
+               hotkey=args.hotkey, probe=args.probe, tray=args.tray)
+
+
+# --------------------------------------------------------------- autostart ---
+
+def cmd_autostart(args: argparse.Namespace) -> int:
+    """Oturum acilisinda arka planda (tepsi) baslat - Startup klasoru kisayolu."""
+    from alleye import autostart
+
+    ui.init()
+    ui.banner("otomatik baslatma")
+
+    if args.enable:
+        try:
+            path = autostart.enable()
+        except (OSError, RuntimeError) as exc:
+            ui.error(str(exc))
+            return 2
+        ui.ok(f"acildi: {path}")
+        ui.note(f"komut: {' '.join(autostart.launch_target())}")
+        ui.note("bir sonraki oturumda arka planda (tepsi) baslar")
+        return 0
+
+    if args.disable:
+        if autostart.disable():
+            ui.ok("kapatildi - kisayol silindi")
+        else:
+            ui.note("zaten kapaliydi")
+        return 0
+
+    ui.note(autostart.status())
+    if not autostart.is_enabled():
+        ui.note("acmak icin:  alleye autostart --enable")
+    return 0
+
+
+# ------------------------------------------------------------------- teach ---
+
+def cmd_teach(args: argparse.Namespace) -> int:
+    """Az once takildigin duvari cozulmus isaretle ve kendi cozum notunu birak."""
+    ui.init()
+    con = store.connect()
+    note = " ".join(args.note or "").strip()
+    if not note:
+        ui.warn('ne ogrendigini yaz:  alleye teach "cozumu buraya"')
+        return 1
+    last = store.last_wall(con)
+    if last is None:
+        ui.warn("ogretilecek bir duvar yok - once bir hataya takil")
+        return 1
+    sig = last["signature"]
+    store.teach_wall(con, sig, note)
+    ui.banner("ogrenildi")
+    ui.note(f"duvar: {sig[:64]}")
+    ui.ok(f"notun: {note}")
+    ui.note("ayni hataya tekrar takilirsan bu notu once sana gosterecegim.")
+    return 0
+
+
+# ------------------------------------------------------------------- walls ---
+
+def cmd_walls(args: argparse.Namespace) -> int:
+    """Carptigin duvarlari listele: kac kez, cozuldu mu (v/nokta), imza, varsa not."""
+    ui.init()
+    con = store.connect()
+    ui.banner("duvarlar")
+    walls = store.top_walls(con, args.limit)
+    if not walls:
+        ui.note("henuz hicbir duvara carpmadin")
+        return 0
+    for w in walls:
+        mark = "✓" if w["resolved"] else "•"
+        ui.note(f"  {mark} {w['hits']}x  {w['signature'][:64]}")
+        note = store.get_note(con, w["signature"])
+        if note:
+            ui.note(f"      not: {note}")
+    ui.rule()
+    ui.note(f"toplam {len(walls)} duvar · ✓ cozulmus · • acik")
+    return 0
 
 
 # -------------------------------------------------------------------- main ---
@@ -448,7 +537,22 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--interval", type=float, default=20.0, help="tarama araligi (sn)")
     w.add_argument("--hotkey", help="kisayolu zorla (orn: ctrl+alt+e)")
     w.add_argument("--probe", action="store_true", help="hangi kisayollar bos, listele")
+    w.add_argument("--tray", action="store_true", help="konsolu gizle, sistem tepsisine tasi")
     w.set_defaults(func=cmd_watch)
+
+    au = sub.add_parser("autostart", help="oturum acilisinda arka planda baslat")
+    au.add_argument("--enable", action="store_true", help="startup kisayolunu olustur")
+    au.add_argument("--disable", action="store_true", help="startup kisayolunu sil")
+    au.add_argument("--status", action="store_true", help="durumu goster (varsayilan)")
+    au.set_defaults(func=cmd_autostart)
+
+    t = sub.add_parser("teach", help="az once takildigin duvara kendi cozum notunu birak")
+    t.add_argument("note", nargs="*", help="cozum notun")
+    t.set_defaults(func=cmd_teach)
+
+    wl = sub.add_parser("walls", help="carptigin duvarlari ve cozumleri listele")
+    wl.add_argument("--limit", type=int, default=15, help="kac duvar gosterilsin")
+    wl.set_defaults(func=cmd_walls)
 
     return p
 
@@ -457,6 +561,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
     known = {"ask", "status", "doctor", "install", "watch", "key", "forget",
+             "autostart", "teach", "walls",
              "-h", "--help", "--version"}
     # Ciplak `alleye` veya `alleye neden calismiyor` -> ask varsayilani
     if not argv or argv[0] not in known:

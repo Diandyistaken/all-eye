@@ -12,6 +12,7 @@ import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from alleye import context
 
@@ -46,6 +47,18 @@ class TestGuards(RecentFilesCase):
 
     def test_nonexistent_dir_does_not_crash(self):
         self.assertEqual(context.recent_files(str(self.root / "yok")), "")
+
+    def test_home_guard_actually_skips_walk(self):
+        """Ana klasor korumasinin GERCEKTEN taramayi kestigini deterministik
+        dogrula: gecici dizine taze bir dosya koy, _is_home_or_root'u True'ya
+        zorla -> koruma devreye girer ve bos doner. Koruma kalkarsa (mutasyon
+        `if False`) taze dosya listelenir ve bu test kirmiziya duser. Gercek home
+        dizininin anlik icerigine bagli DEGIL - o yuzden guvenilir bir kilit."""
+        self.touch("app.py", ago_min=1)
+        # koruma olmasa app.py kesin listelenirdi:
+        self.assertIn("app.py", context.recent_files(str(self.root)))
+        with mock.patch.object(context, "_is_home_or_root", return_value=True):
+            self.assertEqual(context.recent_files(str(self.root)), "")
 
 
 class TestTimeWindow(RecentFilesCase):

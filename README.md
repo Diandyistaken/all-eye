@@ -99,8 +99,28 @@ alleye watch                          # arka planda izle, Ctrl+Alt+E ile çağı
 ```
 
 ```bash
+alleye watch --tray                   # konsolu gizle, sistem tepsisine taşı
+```
+
+```bash
 alleye watch --probe                  # hangi kısayollar boş, listele
 ```
+
+```bash
+alleye autostart --enable             # bilgisayar açılınca arka planda başlat
+```
+
+```bash
+alleye teach "çözüm: PATH'e ekle"     # az önce takıldığın duvara kendi notunu düş
+```
+
+```bash
+alleye walls                          # en çok çarptığın duvarlar + kendi notların
+```
+
+Kısayola bastığında cevap, imlecin yanında çerçevesiz bir pencerede belirir
+(Esc = kapat, Enter = kademe derinleştir). Pencere odağı çalmaz; kapanınca
+eski pencerene dönersin. `--tray` ile konsol penceresi hiç görünmez.
 
 Kısayol başka bir uygulama tarafından tutuluyorsa All Eye ölmez — yedek
 listesinden ilk boş olanı kendisi seçer ve hangisini kullandığını söyler.
@@ -234,4 +254,5 @@ alleye status
 
 Fazlar, görevler, bitti kriterleri ve karar günlüğü: **[ROADMAP.md](ROADMAP.md)**
 
-Sıradaki iş: Faz 1.1 — sistem tepsisi ikonu (konsol penceresini öldür).
+Faz 1 tamamlandı (tepsi ikonu · otomatik başlatma · cevap penceresi · teach/walls).
+Sıradaki iş: Faz 2 — tetikleyiciyi genişlet (pasif tespit v2, sesli çağrı).

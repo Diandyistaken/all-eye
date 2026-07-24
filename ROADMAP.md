@@ -21,11 +21,19 @@ Son güncelleme: 2026-07-24
 | Kademeli mentor (1→2→3) | ✅ | kademe 3 ağır modele geçiyor |
 | Duvar hafızası (SQLite) | ✅ | "bu duvara N. kez çarpıyorsun" |
 | Global kısayol | ✅ | `ctrl+alt+e`, dolu olursa otomatik yedek |
-| Pasif tespit | ⚠️ | çalışıyor ama sadece konsola yazıyor |
-| Test ağı | ✅ | 156 test, 1.4 sn · her tuzak mutasyonla doğrulandı |
+| Pasif tespit | ✅ | tepsi modunda ikon renk değiştirir (Faz 1.1) |
+| Test ağı | ✅ | 226 test, ~3.6 sn · her tuzak mutasyonla doğrulandı |
+| Tepsi ikonu | ✅ | `watch --tray` konsolu gizler, sağ tık menüsü (Faz 1.1) |
+| Otomatik başlatma | ✅ | `autostart --enable` Startup kısayolu (Faz 1.2) |
+| Cevap penceresi | ✅ | tkinter, çerçevesiz, imleç yanı, Esc/Enter (Faz 1.3) |
+| teach / walls | ✅ | duvarı kapat, kendi notunu önce göster (Faz 1.4) |
 
-**Bilinen sınırlar:** bash'te komut çıktısı yakalanmıyor · pasif tespitin görsel
-karşılığı yok · terminal dışı hiçbir bağlam yok · `watch` elle başlatılıyor.
+**Faz 1 tamamlandı (2026-07-24)** — 4 alt görev paralel ajanlarla yazıldı,
+senior lead denetiminden geçti (bir KRİTİK SQLite thread hatası yakalanıp
+düzeltildi), 226 test yeşil.
+
+**Bilinen sınırlar:** bash'te komut çıktısı yakalanmıyor · terminal dışı hiçbir
+bağlam yok (Faz 3) · pasif tespit sinyalleri hâlâ kaba (Faz 2.1).
 
 ---
 
@@ -67,53 +75,48 @@ kırmızıya düşer.
 
 ---
 
-## Faz 1 — Günlük kullanıma geçiş
+## Faz 1 — Günlük kullanıma geçiş ✅ (2026-07-24)
 
 **Amaç:** Aracı "kurdum" olmaktan çıkarıp "her gün açık" hale getirmek.
-Bu faz bitmeden yeni yetenek eklemiyoruz — kullanmadığın bir şeyi
-geliştirmenin anlamı yok.
 
-**Tahmini:** 1-2 oturum
+**Nasıl yapıldı:** 4 alt görev dört paralel ajana bölündü, ortak bir sözleşmeyle
+(imzalar, dosya sahiplikleri, DB şeması) koordine edildi; çakışan dosyalar
+(cli.py, daemon.py, config.py) tek elden birleştirildi; senior lead ajanı
+uyum denetimi yaptı.
 
-### 1.1 Tepsi ikonu — konsol penceresini öldür
-Şu an `watch` bir konsol penceresi işgal ediyor. Sistem tepsisine taşı.
+### 1.1 Tepsi ikonu — konsol penceresini öldür ✅
+- [x] `alleye/tray.py` — ctypes ile `Shell_NotifyIcon`, sıfır bağımlılık
+- [x] Durum renkleri: sakin (gri) / sinyal (turuncu) / hazır (yeşil, ileride)
+- [x] Sağ tık menüsü: Sor · Durum · Duraklat · Çık
+- [x] `daemon.run(tray=True)` konsolu gizler (`ShowWindow(hwnd, 0)`)
 
-- [ ] `alleye/tray.py` — ctypes ile `Shell_NotifyIcon`, sıfır bağımlılık
-- [ ] Durum renkleri: sakin / sinyal var / cevap hazır
-- [ ] Sağ tık menüsü: Sor · Durum · Duraklat · Çık
-- [ ] `daemon.run()` tepsi modunda konsolu gizlesin (`ShowWindow(hwnd, 0)`)
+**Bitti kriteri:** `alleye watch --tray` konsolu gizler; pasif sinyal gelince
+ikon turuncuya döner. Canlı doğrulandı (test_tray smoke gerçek ikon üretti).
 
-**Bitti kriteri:** `alleye watch --tray` görev çubuğunda pencere bırakmaz,
-sinyal geldiğinde ikon renk değiştirir.
+### 1.2 Otomatik başlatma ✅
+- [x] `alleye autostart --enable/--disable/--status`
+- [x] Startup klasörüne `.lnk` (PowerShell WScript.Shell, pip yok, yönetici yok)
+- [x] `alleye doctor` otomatik başlatma durumunu gösteriyor
 
-### 1.2 Otomatik başlatma
-- [ ] `alleye autostart --enable/--disable`
-- [ ] Startup klasörüne `.lnk` (Görev Zamanlayıcı'dan basit, yönetici gerekmez)
-- [ ] `alleye doctor` otomatik başlatma durumunu göstersin
+**Bitti kriteri:** Startup kısayolu `pythonw -m alleye watch --tray` çalıştırır;
+gerçek `.lnk` roundtrip testi geçti.
 
-**Bitti kriteri:** Bilgisayarı yeniden başlat, `ctrl+alt+e` çalışıyor.
+### 1.3 Cevap penceresi ✅
+- [x] Çerçevesiz, her zaman üstte, imlecin yanında açılan pencere
+- [x] **tkinter (stdlib)** — pywebview DEĞİL; sıfır bağımlılık kuralı korundu
+- [x] Esc = kapat, Enter = kademe derinleştir
+- [x] Odağı çalmaz; kapanınca eski pencereye döner
 
-### 1.3 Cevap penceresi
-Şu an cevap `watch` konsoluna basılıyor — kısayola bastığında oraya
-odaklanman gerekiyor. Kendi penceresi olmalı.
+**Bitti kriteri:** `window.available()` ise kısayol cevabı imleç yanında üstte
+gösterir; Esc ile kapanır. tkinter yoksa konsol yoluna nazikçe düşer.
 
-- [ ] Çerçevesiz, her zaman üstte, imlecin yanında açılan pencere
-- [ ] WebView2 (`pywebview`) — Windows'ta zaten kurulu, Chromium taşımaz
-- [ ] Esc = kapat, Enter = kademe derinleştir
-- [ ] Odağı çalmasın; kapanınca eski pencereye dönsün
+### 1.4 `alleye teach` — duvarı kapat ✅
+- [x] `alleye teach "çözüm notu"` → son duvarı `resolved=1` yap + not ekle
+- [x] Aynı imza tekrar ederse mentor önce **senin notunu** gösterir
+- [x] `alleye walls` — en çok çarptığın duvarlar listesi (+ notlar)
 
-**Bitti kriteri:** VS Code'da çalışırken `ctrl+alt+e` → cevap üstte belirir →
-Esc → VS Code'a geri dönersin, hiçbir şey bozulmaz.
-
-### 1.4 `alleye teach` — duvarı kapat
-Duvar hafızası şu an sadece sayıyor. Çözümü de öğrenmeli.
-
-- [ ] `alleye teach "çözüm notu"` → son duvarı `resolved=1` yap + not ekle
-- [ ] Aynı imza tekrar ederse mentor önce **senin notunu** göstersin
-- [ ] `alleye walls` — en çok çarptığın duvarlar listesi
-
-**Bitti kriteri:** Bir hatayı çöz, `alleye teach` ile not düş, aynı hatayı
-tekrar üret → mentor kendi cevabından önce senin notunu gösterir.
+**Bitti kriteri:** `context.build` aynı imza için `user_note` yüklüyorsa
+`cmd_ask` modelden önce senin notunu basar. Canlı doğrulandı.
 
 ---
 
@@ -209,13 +212,13 @@ sonunda `alleye box report` kendi öğrenme kaydını çıkarsın.
 ## Hedef dosya iskeleti
 
 ```
-tests/                   ✅  156 test · stdlib unittest
+tests/                   ✅  226 test · stdlib unittest
 tools/mutation_check.py  ✅  testler gercekten koruyor mu
 
 alleye/
 ├── __init__.py          ✅
 ├── __main__.py          ✅
-├── cli.py               ✅  komutlar: ask status doctor install key forget watch
+├── cli.py               ✅  ask status doctor install key forget watch autostart teach walls
 ├── config.py            ✅  ayarlar, .env, anahtar doğrulama
 ├── journal.py           ✅  günlük okuma, hata imzası
 ├── detect.py            ✅  zorlanma sinyalleri            → Faz 2.1 derinleşir
@@ -234,9 +237,9 @@ alleye/
 │   ├── alleye.ps1       ✅  transcript dilimleme
 │   └── alleye.bash      ✅  komut + exit
 │
-├── tray.py              ⬜ Faz 1.1  sistem tepsisi
-├── window.py            ⬜ Faz 1.3  cevap penceresi (WebView2)
-├── autostart.py         ⬜ Faz 1.2  başlangıçta çalıştır
+├── tray.py              ✅ Faz 1.1  sistem tepsisi (ctypes Shell_NotifyIcon)
+├── window.py            ✅ Faz 1.3  cevap penceresi (tkinter, stdlib)
+├── autostart.py         ✅ Faz 1.2  başlangıçta çalıştır (Startup .lnk)
 ├── voice.py             ⬜ Faz 2.2  openWakeWord
 ├── vision.py            ⬜ Faz 3.2  pencere görüntüsü + vision
 └── box.py               ⬜ Faz 5    HTB oturum yönetimi
@@ -257,7 +260,7 @@ Faz atlamadan önce temizlenecekler:
       yeniden kuruluyor, gereksiz iş
 - [ ] **Kota takibi yok** — günlük Gemini kullanımını say, sınıra yaklaşınca uyar
 - [ ] **`watch` tek örnek kontrolü yok** — iki kez başlatılırsa kısayol çakışır
-- [ ] Git deposu değil → `git init` yapılmalı
+- [x] Git deposu ✅ 2026-07-24 — public: github.com/Diandyistaken/all-eye
 
 ---
 
@@ -279,6 +282,9 @@ Neden böyle yapıldığını unutmamak için. Bunlar tartışılıp karara bağ
 | Testler stdlib `unittest`, pytest yok | Sıfır bağımlılık kuralı test paketi için de geçerli; `discover` zaten yeterli. |
 | Testin kendisi mutasyonla doğrulanıyor | Yeşil paket hiçbir şey kanıtlamaz. Bir testin değeri, ilgili kod bozulduğunda kırmızıya düşmesidir — `tools/mutation_check.py` bunu ölçüyor. |
 | Hook testi gerçek `powershell.exe` başlatır | Bayat `$LASTEXITCODE` tuzağı saf Python'da taklit edilemez; PowerShell'in kendi semantiği olmadan test bir şey kanıtlamaz. |
+| Cevap penceresi tkinter, pywebview değil | pywebview pip bağımlılığıdır; "sıfır bağımlılık" demir kuralını bozar. tkinter Python'la gelir. ROADMAP metni burada kendi kuralıyla çelişiyordu; kural kazandı. |
+| Faz 1 paralel ajanlar + senior lead | Bağımsız 4 alt görev aynı anda ayrı ajanlarda; paylaşılan sözleşme imzaları hizaladı, çakışan dosyalar tek elden birleşti, senior lead uyumu denetledi (bir KRİTİK SQLite hatası böyle yakalandı). |
+| Pencere yolunda thread-başına SQLite | `show_answer` cevabı ayrı worker thread'de akıtıyor; sqlite bağlantısı oluşturulduğu thread'e bağlı, paylaşılırsa `ProgrammingError`. Bağlam ana thread'de, kayıt worker thread'de kendi bağlantısıyla. |
 
 ---
 
@@ -289,4 +295,4 @@ Neden böyle yapıldığını unutmamak için. Bunlar tartışılıp karara bağ
 3. Faz bitince bu dosyada işaretle, karar günlüğüne yeni kararları ekle
 4. Sonraki faza geçmeden teknik borç listesine bak
 
-Sıradaki iş: **Faz 1.1 — tepsi ikonu**.
+Sıradaki iş: **Faz 2.1 — pasif tespit v2** (Faz 1 tamamlandı).
