@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 from collections.abc import Iterator
 
@@ -14,6 +15,7 @@ class ProviderError(RuntimeError):
 
 class Provider:
     name = "?"
+    supports_vision = False   # Faz 3: goruntu kabul eden saglayici mi
 
     def __init__(self, cfg: dict, deep: bool = False):
         self.cfg = cfg
@@ -59,28 +61,40 @@ class Gemini(Provider):
     """
 
     name = "gemini"
+    supports_vision = True   # ucretsiz katmanda gorsel dahil
     BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
     def ready(self) -> tuple[bool, str]:
         return self._key_ready()
 
-    def stream(self, system: str, user: str) -> Iterator[str]:
+    def stream(self, system: str, user: str,
+               image_png: bytes | None = None) -> Iterator[str]:
         key = self._key()
         if not key:
             raise ProviderError("gemini: anahtar yok")
+        # Goruntu varsa inlineData olarak ayni user mesajina eklenir. image_png
+        # None ise payload eskisiyle BIREBIR ayni kalir - metin yolu bozulmaz.
+        parts: list[dict] = [{"text": user}]
+        if image_png:
+            parts.append({"inlineData": {
+                "mimeType": "image/png",
+                "data": base64.b64encode(image_png).decode("ascii"),
+            }})
         payload_base = {
             "systemInstruction": {"parts": [{"text": system}]},
-            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "contents": [{"role": "user", "parts": parts}],
             "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1600},
         }
         headers = {"x-goog-api-key": key}
+        # Goruntulu istek daha buyuk govde + daha cok token; zaman asimi genis.
+        timeout = 90.0 if image_png else 45.0
         trail: list[str] = []
         for model in self.models:
             url = f"{self.BASE}/{model}:streamGenerateContent?alt=sse"
             self._say(f"gemini · {model} dusunuyor")
             try:
                 got = False
-                for obj in stream_sse(url, payload_base, headers):
+                for obj in stream_sse(url, payload_base, headers, timeout):
                     for cand in obj.get("candidates", []):
                         for part in cand.get("content", {}).get("parts", []):
                             text = part.get("text")

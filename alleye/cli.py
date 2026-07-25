@@ -547,6 +547,106 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
+# -------------------------------------------------------------------- look ---
+
+def cmd_look(args: argparse.Namespace) -> int:
+    """Aktif pencereyi yakala, ONAYLAT, sonra goruntuyle birlikte sor (Faz 3).
+
+    Gizlilik: iki bagimsiz kapi var, ikisi de varsayilan olarak REDDEDER.
+      1) config vision.enabled false ise hicbir sey yakalanmaz (yakalama kodu
+         hic calismaz).
+      2) preview_and_confirm onay vermezse hicbir sey gonderilmez.
+    Her cagri yeniden sorar - "bir daha sorma" secenegi bilerek YOK.
+    """
+    cfg = config.load()
+    ui.init()
+    ui.banner("pencereye bak")
+
+    if not cfg.get("vision", {}).get("enabled", False):
+        ui.error("ekran goruntusu KAPALI (gizlilik icin varsayilan)")
+        ui.note(f"acmak icin {config.CONFIG_FILE} icine:")
+        ui.note('    {"vision": {"enabled": true}}')
+        ui.note("terminal baglami her zaman calisir:  alleye ask")
+        return 1
+
+    from alleye import vision
+
+    if not vision.available():
+        ui.error("ekran yakalama bu sistemde kullanilamiyor (yalniz Windows)")
+        return 1
+
+    title = vision.foreground_title()
+    ui.note(f"pencere: {title or '(bilinmiyor)'}")
+
+    png = vision.capture_active_window()
+    if png is None:
+        # Olculdu: PrintWindow/BitBlt 'basarili' donup tamamen siyah kare
+        # verebiliyor. Siyah goruntu gondermek yerine durustce soyluyoruz.
+        ui.error("pencere yakalanamadi - bos/siyah kare dondu")
+        ui.note("ekran kilitli, pencere kucultulmus ya da korumali olabilir")
+        ui.note("terminal baglami icin:  alleye ask")
+        return 1
+
+    dims = vision.png_dimensions(png) or (0, 0)
+    ui.note(f"goruntu: {dims[0]}x{dims[1]} px · {len(png) / 1024:.0f} KB")
+    ui.rule()
+
+    if not vision.preview_and_confirm(png, note=f"Pencere: {title}"):
+        ui.warn("gonderilmedi - onay verilmedi")
+        return 0
+
+    question = " ".join(args.question or "").strip()
+    con = store.connect()
+    b = context.build(con=con)
+    rendered = context.render(b, question)
+    level = max(1, min(3, args.level))
+    # Gorsel sorularin duvar imzasi pencereye baglanir; terminal hata
+    # imzalariyla karismasin diye "look::" oneki var.
+    signature = f"look::{(title or 'pencere').split(' - ')[0][:60]}"
+
+    while True:
+        ui.banner(f"kademe {level} · goruntu + terminal baglami")
+        prog = ui.Progress()
+        # Gorsel akil yurutme agir model ister; kademe farketmeksizin deep.
+        router = Router(cfg, notify=prog.set, deep=True)
+        sys_p = mentor.system_prompt(level, cfg["language"])
+        usr_p = mentor.user_prompt(
+            rendered, level,
+            question or "Ekrandaki pencereye bak: burada neyi kaciriyorum?")
+
+        prog.set("goruntu + baglam gonderiliyor")
+        prog.start()
+        try:
+            text = ui.stream_out(router.stream(sys_p, usr_p, png),
+                                 on_first=prog.stop)
+        except ProviderError as exc:
+            prog.stop()
+            ui.error(str(exc))
+            ui.note("`alleye doctor --live` ile anahtarlari kontrol et.")
+            return 2
+        finally:
+            prog.stop()
+
+        used = router.used
+        ui.rule()
+        ui.note(f"{used.provider}/{used.model}")
+        store.record_ask(con, cwd=b.cwd, level=level, trigger="look",
+                         signature=signature, question=question or "(gorsel)",
+                         answer=text, provider=used.provider, model=used.model)
+
+        if args.once:
+            return 0
+        reply = ui.prompt_more(level)
+        if reply.lower() in ("q", "quit", "exit", "yeter"):
+            return 0
+        if reply:
+            question = reply
+        elif level < 3:
+            level += 1
+        else:
+            return 0
+
+
 # -------------------------------------------------------------------- main ---
 
 def build_parser() -> argparse.ArgumentParser:
@@ -612,6 +712,13 @@ def build_parser() -> argparse.ArgumentParser:
     wl.add_argument("--limit", type=int, default=15, help="kac duvar gosterilsin")
     wl.set_defaults(func=cmd_walls)
 
+    lk = sub.add_parser("look", help="aktif pencerenin goruntusunu (onayinla) modele sor")
+    lk.add_argument("question", nargs="*", help="istege bagli soru")
+    lk.add_argument("-l", "--level", type=int, default=1,
+                    help="1 durtme, 2 yon, 3 tam cozum")
+    lk.add_argument("--once", action="store_true", help="tek cevap ver, kademe sorma")
+    lk.set_defaults(func=cmd_look)
+
     c = sub.add_parser("calibrate", help="journal'a bakip esik oner (--apply ile yaz)")
     c.add_argument("--apply", action="store_true", help="onerilen esikleri config.json'a yaz")
     c.add_argument("--history", type=int, default=300, help="taranacak son komut sayisi")
@@ -624,7 +731,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
     known = {"ask", "status", "doctor", "install", "watch", "key", "forget",
-             "autostart", "teach", "walls", "calibrate",
+             "autostart", "teach", "walls", "calibrate", "look",
              "-h", "--help", "--version"}
     # Ciplak `alleye` veya `alleye neden calismiyor` -> ask varsayilani
     if not argv or argv[0] not in known:

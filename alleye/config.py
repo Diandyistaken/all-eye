@@ -74,6 +74,10 @@ DEFAULTS: dict = {
     # karsilastirilir ve yalniz hata-benzeri metin islenir. Gizlilik icin
     # kapatilabilir: false yap.
     "clipboard_watch": True,
+    # Ekran goruntusu (Faz 3). VARSAYILAN KAPALI - gizlilik yuzeyini en cok
+    # buyuten ozellik bu. Acilsa bile hicbir goruntu kullanici onizleyip
+    # onaylamadan gonderilmez (alleye/vision.py > preview_and_confirm).
+    "vision": {"enabled": False},
     # Cevap penceresi (Faz 1.3, alleye/window.py). tkinter ile, sifir bagimlilik.
     # window.py bu blok olmadan da varsayilanlarla calisir; buraya konmasi
     # kullaniciya ayar noktasi verir.

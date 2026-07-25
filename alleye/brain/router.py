@@ -46,20 +46,37 @@ class Router:
         for p in self.providers:
             p.notify = notify
 
-    def stream(self, system: str, user: str) -> Iterator[str]:
-        """Cevabi parca parca akitir. Son parca sonrasi `self.used` doludur."""
+    def stream(self, system: str, user: str,
+               image_png: bytes | None = None) -> Iterator[str]:
+        """Cevabi parca parca akitir. Son parca sonrasi `self.used` doludur.
+
+        image_png verilirse (Faz 3) yalniz gorsel destekleyen saglayicilar
+        denenir; digerleri beklenmedik bir parametreyle cokmek yerine elenir.
+        Hicbiri uygun degilse net bir hata verilir - sessizce metin-only
+        gondermek kullaniciyi yaniltirdi (goruntuye baktigini sanir).
+        """
         self.used = Answer()
         if not self.providers:
             raise ProviderError("hicbir saglayici tanimli degil (config.json > providers)")
 
-        for p in self.providers:
+        chain = self.providers
+        if image_png is not None:
+            chain = [p for p in chain if getattr(p, "supports_vision", False)]
+            if not chain:
+                raise ProviderError(
+                    "goruntu destekleyen saglayici yok (su an yalniz gemini). "
+                    "config.json > providers listesine gemini ekle.")
+
+        for p in chain:
             ok, why = p.ready()
             if not ok:
                 self.used.errors.append(f"{p.name}: {why}")
                 continue
             try:
                 first = True
-                for chunk in p.stream(system, user):
+                gen = (p.stream(system, user, image_png) if image_png is not None
+                       else p.stream(system, user))
+                for chunk in gen:
                     if first:
                         self.used.provider, first = p.name, False
                     self.used.text += chunk

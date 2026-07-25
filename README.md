@@ -119,6 +119,10 @@ alleye walls                          # en çok çarptığın duvarlar + kendi n
 ```
 
 ```bash
+alleye look                           # aktif pencereyi (onayınla) modele göster
+```
+
+```bash
 alleye calibrate                      # yanlış alarm oranını ölç, eşik öner
 ```
 
@@ -194,6 +198,11 @@ Başlat menüsünden PowerShell).
 - Pano izleyici (Faz 2) panonu **buluta yollamaz** — sadece yerelde son hatayla
   karşılaştırır ve yalnızca hata-benzeri metni işler. Kapatmak için:
   `config.json` → `"clipboard_watch": false`
+- Ekran görüntüsü (`alleye look`) **varsayılan KAPALI**. Açmak için
+  `config.json` → `"vision": {"enabled": true}`. Açıkken bile iki kapı var ve
+  ikisi de varsayılan olarak reddeder: (1) config bayrağı, (2) her çağrıda
+  görüntüyü **kendi gözünle görüp onaylaman**. Esc / İptal / pencereyi kapatma
+  = gönderilmez. "Bir daha sorma" seçeneği bilerek yok.
 - Tamamen çevrimdışı çalışmak için `config.json` → `"providers": ["ollama"]`
 - `ollama pull qwen2.5-coder:7b` — 6 GB VRAM'e sığar, hiçbir veri makineden çıkmaz
 
@@ -265,6 +274,6 @@ alleye status
 
 Fazlar, görevler, bitti kriterleri ve karar günlüğü: **[ROADMAP.md](ROADMAP.md)**
 
-Faz 1-2 tamamlandı (tepsi · otomatik başlatma · cevap penceresi · teach/walls ·
-pasif tespit v2 · pano izleyici · calibrate).
-Sıradaki iş: Faz 3 — terminal dışı bağlam (aktif pencere, son çare ekran görüntüsü).
+Faz 1-2-3 tamamlandı (tepsi · otomatik başlatma · cevap penceresi · teach/walls ·
+pasif tespit v2 · pano izleyici · calibrate · aktif pencere bağlamı · `look`).
+Sıradaki iş: Faz 4 — öğrenen hafıza (duvarları konuya göre kümele, haftalık özet).

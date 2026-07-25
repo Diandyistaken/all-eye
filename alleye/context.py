@@ -28,6 +28,7 @@ class Bundle:
     focus: Turn | None
     git: str = ""
     files: str = ""
+    window: str = ""          # Faz 3.1: on plandaki pencere (terminal disi ipucu)
     signature: str = ""
     wall_hits: int = 0
     history: list[str] = field(default_factory=list)
@@ -144,6 +145,7 @@ def build(cwd: str | None = None, con=None) -> Bundle:
         focus=focus,
         git=git_context(cwd),
         files=recent_files(cwd),
+        window=active_window(),
     )
     if focus:
         b.signature = journal.fingerprint(focus)
@@ -168,6 +170,10 @@ def render(b: Bundle, question: str = "") -> str:
         f"sistem: {b.system}",
         f"dizin: {b.cwd}",
     ]
+    if b.window:
+        # Terminal disinda nerede oldugu bazen tek ipucu (Faz 3.1). Ucuz: tek
+        # Win32 cagrisi, ekran goruntusu DEGIL.
+        head.append(f"aktif pencere: {b.window}")
     if b.git:
         head += ["", "## GIT", b.git]
     if b.files:

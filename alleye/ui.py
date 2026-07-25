@@ -9,10 +9,47 @@ import threading
 import time
 
 _ENABLED = True
+_UNICODE_OK = True
+
+
+def _fix_encoding() -> None:
+    """Cikti boruya/dosyaya giderken Unicode cokmesini onle.
+
+    Sessiz hata: stdout bir boruya ya da dosyaya yonlendirildiginde Python
+    konsol yerine YEREL KOD SAYFASINI kullanir (bu makinede cp1254). Banner'daki
+    ◉ ve ─ karakterleri orada yok, dolayisiyla `alleye walls > out.txt` ya da
+    pythonw ile baslatilan tepsi modu UnicodeEncodeError ile TUM komutu
+    cokertiyordu. Once utf-8'e gecmeyi dene; olmazsa sembolleri ASCII'ye dusur.
+    """
+    global _UNICODE_OK
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass  # StringIO gibi reconfigure'u olmayan akislar; asagisi yine korur
+    enc = getattr(sys.stdout, "encoding", None) or "ascii"
+    try:
+        "◉─·✓•".encode(enc)
+        _UNICODE_OK = True
+    except Exception:
+        _UNICODE_OK = False
+
+
+def glyph(fancy: str, plain: str) -> str:
+    """Sembol cizilemiyorsa ASCII karsiligina dus."""
+    return fancy if _UNICODE_OK else plain
+
+
+def _safe(text: str) -> str:
+    """Cizilemeyen karakterleri temizle (yalniz fallback modunda is yapar)."""
+    if _UNICODE_OK:
+        return text
+    enc = getattr(sys.stdout, "encoding", None) or "ascii"
+    return text.encode(enc, "replace").decode(enc, "replace")
 
 
 def init() -> None:
     global _ENABLED
+    _fix_encoding()   # renkten ONCE: bu, cokmeyi onleyen kisim
     if os.environ.get("NO_COLOR") or not sys.stdout.isatty():
         _ENABLED = False
         return
@@ -43,28 +80,28 @@ def c(style: str, text: str) -> str:
 
 
 def banner(subtitle: str) -> None:
-    print(f"\n{c('eye', '◉ all eye')}  {c('dim', subtitle)}")
-    print(c("dim", "─" * 62))
+    print(f"\n{c('eye', glyph('◉', '(o)') + ' all eye')}  {c('dim', _safe(subtitle))}")
+    rule()
 
 
 def rule() -> None:
-    print(c("dim", "─" * 62))
+    print(c("dim", glyph("─", "-") * 62))
 
 
 def note(text: str) -> None:
-    print(c("dim", f"  {text}"))
+    print(c("dim", f"  {_safe(text)}"))
 
 
 def warn(text: str) -> None:
-    print(c("warn", f"  ! {text}"))
+    print(c("warn", f"  ! {_safe(text)}"))
 
 
 def error(text: str) -> None:
-    print(c("bad", f"  x {text}"))
+    print(c("bad", f"  x {_safe(text)}"))
 
 
 def ok(text: str) -> None:
-    print(c("ok", f"  + {text}"))
+    print(c("ok", f"  + {_safe(text)}"))
 
 
 class Progress:
@@ -123,8 +160,8 @@ def stream_out(chunks, on_first=None) -> str:
     for ch in chunks:
         if not buf and on_first is not None:
             on_first()
-        buf.append(ch)
-        sys.stdout.write(ch)
+        buf.append(ch)                 # kayda giden metin HEP orijinal kalir
+        sys.stdout.write(_safe(ch))    # ekrana giden kopya cizilemezse sadelesir
         sys.stdout.flush()
     if buf and not buf[-1].endswith("\n"):
         sys.stdout.write("\n")

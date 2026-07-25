@@ -31,6 +31,9 @@ Son güncelleme: 2026-07-24
 | Pano izleyici | ✅ | hatayı kopyalayınca sinyal, buluta gitmez (Faz 2.1) |
 | calibrate | ✅ | yanlış alarm oranı + eşik ayarı (Faz 2.1) |
 | Tepsi balonu | ✅ | sinyalde sessiz "takıldın gibi" bildirimi |
+| Aktif pencere bağlamı | ✅ | `Bundle.window`, her `ask`'te (Faz 3.1) |
+| Ekran görüntüsü + onay | ✅ | `alleye look`, varsayılan KAPALI, çift kapı (Faz 3.2) |
+| Gemini vision | ✅ | `inlineData`, Router vision-farkında (Faz 3.2) |
 
 **Faz 1 tamamlandı (2026-07-24)** — 4 alt görev paralel ajanlarla, senior lead
 denetiminden geçti (bir KRİTİK SQLite thread hatası yakalandı), 226 test.
@@ -39,8 +42,20 @@ denetiminden geçti (bir KRİTİK SQLite thread hatası yakalandı), 226 test.
 3 paralel ajan, 263 test yeşil. Ses tetikleyici sıfır-bağımlılık kuralı için
 ertelendi (yerine pano izleyici).
 
-**Bilinen sınırlar:** bash'te komut çıktısı yakalanmıyor · terminal dışı hiçbir
-bağlam yok (Faz 3) · sesli çağrı yok (bağımlılık nedeniyle ertelendi).
+**Faz 3 tamamlandı (2026-07-25)** — aktif pencere bağlamı + `alleye look`
+(görüntü + onay + Gemini vision), peer-ajan modeli, 286 test yeşil. OCR sır
+taraması ertelendi (bağımlılık); yerine zorunlu insan onayı.
+
+**Bağımsız denetim (2026-07-25):** fact-checker ajanı Faz 1-2'nin 15 iddiasını
+tek tek doğruladı — hepsi VERIFIED, kırık bir şey yok. Denetim sırasında
+iddialar dışında **gerçek bir hata** bulundu ve düzeltildi: çıktı boruya/dosyaya
+yönlendirilince `ui.banner` cp1254 yüzünden `UnicodeEncodeError` ile tüm komutu
+çökertiyordu (`walls`, `calibrate`, `autostart`, `status` — Faz 0'dan beri
+vardı). Özellikle kritikti çünkü autostart `pythonw` ile çalışıyor (konsol yok).
+
+**Bilinen sınırlar:** bash'te komut çıktısı yakalanmıyor · sesli çağrı yok
+(bağımlılık nedeniyle ertelendi) · görüntüde otomatik sır taraması yok
+(insan onayına dayanıyor).
 
 ---
 
@@ -156,28 +171,41 @@ opsiyonel bir extra olarak (çekirdeği kirletmeden) düşünülebilir.
 
 ---
 
-## Faz 3 — Terminal dışı bağlam
+## Faz 3 — Terminal dışı bağlam ✅ (2026-07-25)
 
 **Amaç:** Burp, Wireshark, tarayıcı, IDE — terminal olmayan yerlerde de görmek.
 
-**Tahmini:** 2 oturum
+**Nasıl yapıldı:** Peer-ajan modeli — her iş için **iki ajan bağımsız çözüm**
+üretti, sonra çözümler kıyaslanıp en sağlamı (birleştirilerek) uygulandı.
 
-### 3.1 Aktif pencere farkındalığı
-- [ ] Pencere başlığı + process adı (zaten `context.active_window()` var)
-- [ ] Uygulama profilleri: hangi uygulamada hangi bağlam toplanır
-- [ ] Terminal/IDE ise ekran görüntüsü **alma** — mevcut yol daha iyi
+### 3.1 Aktif pencere farkındalığı ✅
+- [x] Pencere başlığı + process adı → `Bundle.window`, her `ask` bağlamında
+- [x] `vision.foreground_title()` process adını da çözüyor (`Baslik - exe (pid N)`)
+- [x] Terminal/IDE'de ekran görüntüsü **alınmıyor** — mevcut terminal yolu daha iyi
+      (görüntü yalnız `alleye look` ile, elle istendiğinde)
 
-### 3.2 Son çare ekran görüntüsü
-- [ ] Sadece aktif pencere (tam ekran değil), PNG, ctypes `PrintWindow`
-- [ ] Gemini vision'a gönder (ücretsiz katmanda görsel dahil)
-- [ ] Gönderilmeden önce **önizleme göster** — ne yolladığını gör
-- [ ] Görüntüde OCR ile sır taraması, redaksiyon katmanına bağla
+### 3.2 Son çare ekran görüntüsü ✅
+- [x] Sadece aktif pencere (tam ekran değil), PNG, ctypes `PrintWindow` + yedekler
+- [x] Gemini vision'a `inlineData` ile gönderim; Router vision-farkında
+- [x] Gönderilmeden önce **önizleme + açık onay** (tkinter, Esc/İptal = gönderme)
+- [ ] ~~Görüntüde OCR ile sır taraması~~ → **ERTELENDİ** (aşağıdaki karar)
 
-**Bitti kriteri:** Burp Suite'te takıl, `ctrl+alt+e`, mentor ekrandaki isteği
-okuyup yorum yapsın. Gönderim öncesi ne yollandığını görmüş olasın.
+**Bitti kriteri:** `alleye look` aktif pencereyi yakalar, önizletir, onay
+verilmezse hiçbir bayt çıkmaz. Canlı doğrulandı: kapalıyken yakalama kodu hiç
+çalışmıyor (çıkış kodu 1), `vision.py` içinde ağ kullanımı YOK.
 
-**Risk:** Bu faz gizlilik yüzeyini en çok büyüten faz. Varsayılan **kapalı**
-olmalı, her gönderimde açık onay istemeli.
+**OCR ertelendi — gerekçe:** stdlib'de OCR yok; pytesseract/opencv sıfır
+bağımlılık kuralını bozar. Yerine **daha güçlü** bir garanti kondu: görüntüyü
+model görmeden **kullanıcı kendi gözüyle** görüp onaylıyor. Otomatik OCR
+taramasına güvenmek (kaçırabilir) insan onayından zayıftır.
+
+**Ölçülen tuzak — `PrintWindow` yalan söyleyebiliyor:** İki aday çelişti, ölçüm
+yapıldı. Beş farklı pencerede (Chromium, UWP, Progman) `PrintWindow(0x2)`,
+`PrintWindow(0)` ve `BitBlt` **üçü de `1` (başarı) döndü ama bitmap tamamen
+siyahtı** (sıfır olmayan bayt oranı %0.00; aynı araçla DIB'e beyaz çizince %100
+okundu, yani ölçüm doğru). Sonuç: dönüş değerine güvenen zincir modele siyah
+kare gönderir. Bu yüzden her denemeden sonra **gerçek piksellere** bakılıyor
+(`_dib_blank`), üçü de boşsa dürüstçe `None` dönülüyor.
 
 ---
 
@@ -186,15 +214,52 @@ olmalı, her gönderimde açık onay istemeli.
 **Amaç:** "Bu duvara 4. kez çarpıyorsun"u, "sen bu konuda hep şurada
 takılıyorsun"a çevirmek.
 
-**Tahmini:** 1-2 oturum
+**Tahmini:** 1-2 oturum · **Yeni dosya:** `alleye/review.py`
 
-- [ ] Duvarları konuya göre kümele (git · ağ · izin · bağımlılık · sözdizimi)
-- [ ] Haftalık özet: `alleye review` — en çok zaman kaybettiğin 3 konu
-- [ ] Tekrar eden duvarlar için kısa alıştırma önerisi
-- [ ] Hafızayı dışa aktar/içe aktar (makine değiştirince kaybolmasın)
+**Neden şimdi:** Faz 0-3'te veri toplandı (journal + `walls` + `asks`). Şimdiye
+kadar hafıza *sayıyordu*; Faz 4 onu *yorumluyor*. Model çağrısı gerektirmeyen
+kısmı önce yap — ucuz, hızlı, çevrimdışı çalışır.
 
-**Bitti kriteri:** Bir ay sonra `alleye review` sana kendin hakkında
-bilmediğin bir şey söylesin.
+### 4.1 Konu kümeleme (model çağrısı YOK)
+Duvar imzaları zaten `komut::hata` biçiminde. Kural tabanlı sınıflandırma
+yeterli; LLM'e sormak hem yavaş hem gereksiz.
+
+- [ ] `review.topic_of(signature) -> str` — SAF fonksiyon, kural listesi:
+      `git` · `ağ/port` · `izin` · `bağımlılık/modül` · `sözdizimi` · `dosya-yolu`
+      · `docker` · `derleme` · `diğer`
+- [ ] `store`'a `topic` kolonu **ekleme** — imzadan türetilebilir, şema
+      değiştirmek geri alınamaz; türetilmiş veriyi diske yazmıyoruz
+
+### 4.2 `alleye review` — haftalık ayna
+- [ ] `review.summarize(con, days=7) -> dict`: en çok çarpılan 3 konu, toplam
+      duvar, çözülmüş oranı, en uzun süren tıkanma, `teach` ile kapatılanlar
+- [ ] `alleye review [--days 30] [--topic git]` — konsol raporu
+- [ ] Rapor **sayı değil cümle** üretsin: "bu hafta 4 saatinin 3'ü ağ/port
+      konusunda geçti; 3 duvarın 2'sini kendin çözdün, 1'i hâlâ açık"
+
+### 4.3 Alıştırma önerisi (model çağrısı VAR, opsiyonel)
+- [ ] Tekrar eden ve **çözülmemiş** duvarlar için 3-5 satırlık mini alıştırma
+- [ ] Kademe kuralına sadık: alıştırma çözümü vermez, yaptırır
+- [ ] `--no-ai` bayrağıyla tamamen çevrimdışı çalışabilmeli
+
+### 4.4 Hafıza taşınabilirliği
+- [ ] `alleye memory export [dosya.json]` — `store.export_json()` zaten var
+- [ ] `alleye memory import <dosya.json>` — imza çakışırsa `hits` topla,
+      `note` doluysa koru (veri kaybı yok)
+- [ ] Export'tan önce redaksiyon: notlar kullanıcının yazdığı serbest metin,
+      sır içerebilir → `redact.redact()` geçir
+
+**Bitti kriteri:** Bir ay kullandıktan sonra `alleye review` sana kendin
+hakkında bilmediğin bir şey söylesin; `memory export` → başka makinede
+`memory import` → duvar geçmişi ve notlar korunmuş olsun.
+
+**Riskler / dikkat:**
+- Az veriyle rapor yanıltıcı olur → 10'dan az duvar varsa "henüz yeterli veri
+  yok" de, uydurma
+- `asks.answer` uzun metinler tutuyor; rapor bunları modele geri göndermesin
+  (bütçe patlar) — sadece imza/konu/sayı kullan
+- Kümeleme kuralları İngilizce hata mesajlarına göre yazılmalı, Türkçe
+  yerelleştirilmiş çıktılar da olabilir (`hata`, `bulunamadı`)
 
 ---
 
@@ -250,8 +315,8 @@ alleye/
 ├── autostart.py         ✅ Faz 1.2  başlangıçta çalıştır (Startup .lnk)
 ├── clipboard.py         ✅ Faz 2.1  pano izleyici (ctypes, hata-arama sinyali)
 ├── calibrate.py         ✅ Faz 2.1  yanlış alarm oranı + eşik ayarı
+├── vision.py            ✅ Faz 3.2  pencere görüntüsü + PNG + önizleme/onay
 ├── voice.py             ⏸️ Faz 2.2  openWakeWord — ertelendi (pip bağımlılığı)
-├── vision.py            ⬜ Faz 3.2  pencere görüntüsü + vision
 └── box.py               ⬜ Faz 5    HTB oturum yönetimi
 ```
 
@@ -298,6 +363,11 @@ Neden böyle yapıldığını unutmamak için. Bunlar tartışılıp karara bağ
 | Ses tetikleyici ertelendi (Faz 2.2) | openWakeWord = onnxruntime + numpy + sürekli mikrofon; "sıfır bağımlılık / 60-80MB" kuralını bozar. Amaca (unuttuğun anı yakala) bağımlılıksız pano izleyiciyle ulaşıldı. |
 | Pano izleyici buluta hiçbir şey yollamaz | Pano metni yalnızca yerelde son hatayla karşılaştırılır; sadece `looks_like_error` olan metin işlenir (şifre değil). `config.clipboard_watch: false` ile kapatılır — gizlilik kontrolü kullanıcıda. |
 | `calibrate --apply` sadece değişen anahtarı yazar | `install config.json yazmaz` kuralıyla aynı gerekçe: tüm DEFAULTS'u dondurmak sonraki sürüm düzeltmelerini kullanıcıya ulaştırmaz. Mevcut config oku-birleştir-yaz. |
+| Görüntü yakalamada dönüş değerine güvenilmez | Ölçüldü: `PrintWindow`/`BitBlt` `1` dönerken bitmap tamamen siyah olabiliyor. Her denemeden sonra gerçek piksel örneklenir; hepsi boşsa `None` — siyah kare göndermek kotayı harcar ve kullanıcıyı yanıltır. |
+| 24bpp DIB, `CreateCompatibleBitmap` değil | 32bpp'de alfa tanımsız kalıp GDI+ şeffaf PNG üretebiliyor (boş görüntü); 24bpp'de alfa yok. Ayrıca DIB'in ham piksel işaretçisi boşluk kontrolünü decode'suz mümkün kılıyor. |
+| Görüntüde OCR yok, insan onayı var | stdlib'de OCR yok (bağımlılık). Otomatik tarama kaçırabilir; kullanıcının görüntüyü kendi gözüyle görüp onaylaması daha güçlü bir garanti. |
+| Vision Router seviyesinde filtreleniyor | Görüntü varken vision desteklemeyen sağlayıcılar elenir ve hiçbiri yoksa net hata verilir. Sessizce metin-only göndermek kullanıcıyı yanıltırdı (görüntüye baktığını sanır). |
+| `ui` çıktısı utf-8'e zorlanır, sembol ASCII'ye düşer | Boru/dosyaya yönlendirmede yerel kod sayfası (cp1254) `◉`/`─` yüzünden komutu çökertiyordu. Autostart `pythonw` ile çalıştığı için bu sessiz hata üretimde vurabilirdi. |
 
 ---
 
@@ -308,4 +378,4 @@ Neden böyle yapıldığını unutmamak için. Bunlar tartışılıp karara bağ
 3. Faz bitince bu dosyada işaretle, karar günlüğüne yeni kararları ekle
 4. Sonraki faza geçmeden teknik borç listesine bak
 
-Sıradaki iş: **Faz 3 — terminal dışı bağlam** (Faz 1 ve Faz 2 tamamlandı).
+Sıradaki iş: **Faz 4 — öğrenen hafıza** (Faz 1, 2 ve 3 tamamlandı).

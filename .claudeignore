@@ -1,0 +1,15 @@
+﻿# Claude Code'un baglam icin taramamasi gereken agir/uretilen klasorler
+node_modules/
+.venv/
+venv/
+env/
+__pycache__/
+dist/
+build/
+.next/
+out/
+coverage/
+.turbo/
+.cache/
+.parcel-cache/
+*.log
