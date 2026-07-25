@@ -129,7 +129,7 @@ def _answer_window(trigger: str) -> bool:
     cevirme kurali burada da gecerli.
     """
     try:
-        from alleye import context, mentor, store, window
+        from alleye import box, context, mentor, store, window
         from alleye.brain import Router
 
         if not window.available():
@@ -149,10 +149,28 @@ def _answer_window(trigger: str) -> bool:
         rendered = context.render(b, "")
         level = {"n": 1}
 
+        # Faz 5: kisayola basildiginda pentest baglami varsa box moduna gec.
+        # Kullanicinin vizyonu: "bu tusa bastigimda sizmaya calistigimi anlasin."
+        box_on = (cfg.get("box", {}).get("auto_detect", True)
+                  and box.is_pentest_context(b.turns))
+        if box_on:
+            findings = box.collect_findings(b.turns)
+            rendered = rendered + "\n\n" + box.render_box(
+                box.find_target(b.turns), findings,
+                box.untouched(findings, b.turns), box.phase(findings, b.turns))
+            box_phase = box.phase(findings, b.turns)
+
         def _stream_for(lvl: int):
-            router = Router(cfg, deep=lvl >= 3)
-            sys_p = mentor.system_prompt(lvl, cfg["language"])
-            usr_p = mentor.user_prompt(rendered, lvl, "")
+            # Box modu HIZ ister: agir modele gitme. Kisayolda soru yok, o yuzden
+            # ipucu-oncelikli (kademe 1); tam cozum icin terminalden `box ask`.
+            router = Router(cfg, deep=(lvl >= 3 and not box_on))
+            if box_on:
+                sys_p = mentor.box_system_prompt(lvl, cfg["language"], box_phase)
+                usr_p = mentor.user_prompt(
+                    rendered, lvl, "Bu hedefte siradaki adim ne? Denemedigim yuzeylere bak.")
+            else:
+                sys_p = mentor.system_prompt(lvl, cfg["language"])
+                usr_p = mentor.user_prompt(rendered, lvl, "")
 
             def _gen():
                 if lvl > 1:  # header sabit kaldigindan kademeyi metinde belirt

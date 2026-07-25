@@ -36,7 +36,25 @@ CREATE TABLE IF NOT EXISTS walls (
     resolved  INTEGER NOT NULL DEFAULT 0,
     note      TEXT
 );
+CREATE TABLE IF NOT EXISTS box_sessions (
+    name      TEXT PRIMARY KEY,
+    target    TEXT,
+    scope     TEXT,
+    started   REAL NOT NULL,
+    active    INTEGER NOT NULL DEFAULT 1,
+    notes     TEXT
+);
+CREATE TABLE IF NOT EXISTS box_findings (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    session  TEXT NOT NULL,
+    ts       REAL NOT NULL,
+    kind     TEXT NOT NULL,
+    value    TEXT NOT NULL,
+    detail   TEXT,
+    UNIQUE(session, kind, value)
+);
 CREATE INDEX IF NOT EXISTS asks_sig ON asks(signature);
+CREATE INDEX IF NOT EXISTS bf_session ON box_findings(session);
 """
 
 
@@ -146,6 +164,66 @@ def stats(con: sqlite3.Connection) -> dict:
     w = con.execute("SELECT COUNT(*) c FROM walls").fetchone()["c"]
     r = con.execute("SELECT COUNT(*) c FROM walls WHERE resolved=1").fetchone()["c"]
     return {"asks": a, "walls": w, "resolved": r}
+
+
+# ------------------------------------------------------ box oturumlari (Faz 5) ---
+
+def box_start(con: sqlite3.Connection, name: str, target: str = "",
+              scope: str = "") -> None:
+    """Yeni kutu oturumu ac ve etkin yap. Ayni ad varsa hedef/kapsam gunceller.
+
+    Ayni anda tek etkin oturum: yeni oturum digerlerini pasife ceker.
+    """
+    con.execute("UPDATE box_sessions SET active=0")
+    con.execute(
+        "INSERT INTO box_sessions (name, target, scope, started, active, notes)"
+        " VALUES (?,?,?,?,1,'')"
+        " ON CONFLICT(name) DO UPDATE SET target=excluded.target,"
+        " scope=excluded.scope, active=1",
+        (name, target, scope, time.time()))
+    con.commit()
+
+
+def box_active(con: sqlite3.Connection) -> sqlite3.Row | None:
+    return con.execute(
+        "SELECT * FROM box_sessions WHERE active=1 ORDER BY started DESC LIMIT 1"
+    ).fetchone()
+
+
+def box_set_target(con: sqlite3.Connection, name: str, target: str) -> None:
+    con.execute("UPDATE box_sessions SET target=? WHERE name=?", (target, name))
+    con.commit()
+
+
+def box_add_note(con: sqlite3.Connection, name: str, note: str) -> None:
+    row = con.execute("SELECT notes FROM box_sessions WHERE name=?", (name,)).fetchone()
+    if row is None:
+        return
+    stamp = time.strftime("%H:%M")
+    existing = row["notes"] or ""
+    con.execute("UPDATE box_sessions SET notes=? WHERE name=?",
+                (f"{existing}[{stamp}] {note}\n", name))
+    con.commit()
+
+
+def box_record_findings(con: sqlite3.Connection, name: str, findings) -> int:
+    """Yuzeyleri kaydet (Finding nesneleri). Ayni yuzey tekrar eklenmez.
+    Kac YENI yuzey eklendigini dondurur."""
+    added = 0
+    for f in findings:
+        cur = con.execute(
+            "INSERT OR IGNORE INTO box_findings (session, ts, kind, value, detail)"
+            " VALUES (?,?,?,?,?)",
+            (name, f.ts, f.kind, f.value, f.detail))
+        added += cur.rowcount
+    con.commit()
+    return added
+
+
+def box_findings(con: sqlite3.Connection, name: str) -> list[sqlite3.Row]:
+    return con.execute(
+        "SELECT ts, kind, value, detail FROM box_findings WHERE session=?"
+        " ORDER BY kind, value", (name,)).fetchall()
 
 
 def export_json(con: sqlite3.Connection, redact_notes: bool = True) -> str:

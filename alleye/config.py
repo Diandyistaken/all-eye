@@ -78,6 +78,10 @@ DEFAULTS: dict = {
     # buyuten ozellik bu. Acilsa bile hicbir goruntu kullanici onizleyip
     # onaylamadan gonderilmez (alleye/vision.py > preview_and_confirm).
     "vision": {"enabled": False},
+    # Siber guvenlik modu (Faz 5). auto_detect: pentest baglami (bir hedefe
+    # karsi nmap/gobuster gibi araclar) sezilince mentor kendiliginden box
+    # moduna gecer - ipucu-oncelikli, hizli, "neyi denemedin" farkindaligiyla.
+    "box": {"auto_detect": True},
     # Cevap penceresi (Faz 1.3, alleye/window.py). tkinter ile, sifir bagimlilik.
     # window.py bu blok olmadan da varsayilanlarla calisir; buraya konmasi
     # kullaniciya ayar noktasi verir.

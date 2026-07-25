@@ -51,6 +51,7 @@ PowerShell/bash hook  →  journal.jsonl  →  detect.analyze()  →  context.bu
 | `calibrate.py` | eşik kalibrasyonu | `--apply` sadece değişen anahtarı yazar |
 | `clipboard.py` | pano izleyici | hata kopyalanınca sinyal; buluta gitmez |
 | `review.py` | öğrenen hafıza (Faz 4) | konu kümeleme · **EQ** (Jadud uyarlaması) · dip-cevap aynası · alıştırma |
+| `box.py` | siber güvenlik modu (Faz 5) | pentest tespiti · nmap/gobuster ayrıştırma · **niyet algısı** (ipucu↔tam çözüm) · **neyi denemedin** |
 | `ui.py` | konsol HUD | `_fix_encoding()` — boru/dosyada çökmeyi önler |
 
 ## Tuzaklar (her biri bir kez sessizce bozdu — tekrar açma)
@@ -100,3 +101,10 @@ doğrular. **Yeşil paket tek başına bir şey kanıtlamaz** — boş paket de 
 - Yeni config anahtarı → `config.py` `DEFAULTS`
 - Yeni sinyal → `detect.py` `analyze()`
 - Yeni sağlayıcı → `brain/providers.py` + `REGISTRY`
+
+## Box modu (Faz 5) nasıl tetikleniyor
+- `cmd_ask` (ve kısayol/pencere yolu) her çağrıda `box.is_pentest_context(turns)`
+  kontrol eder → pentest aracı + hedef görürse **otomatik** box moduna geçer
+- Kademe: `box.infer_level(question)` — "tam çözüm/nasıl root" → 3, "ipucu/boş" → 1
+- Box modu **her zaman `deep=False`** (hız); prompt = `mentor.box_system_prompt`
+- Kapatmak: `config.box.auto_detect = false`

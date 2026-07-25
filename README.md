@@ -119,6 +119,14 @@ alleye walls                          # en çok çarptığın duvarlar + kendi n
 ```
 
 ```bash
+alleye box start forest --target 10.10.11.42   # HTB/CTF kutu oturumu
+```
+
+```bash
+alleye box status                     # açık portlar/yollar + "neyi denemedin"
+```
+
+```bash
 alleye review                         # haftalık ayna: nerede vakit kaybediyorsun
 ```
 
@@ -282,13 +290,21 @@ alleye status
 
 Fazlar, görevler, bitti kriterleri ve karar günlüğü: **[ROADMAP.md](ROADMAP.md)**
 
-Faz 1-2-3-4 tamamlandı (tepsi · otomatik başlatma · cevap penceresi ·
-teach/walls · pasif tespit v2 · pano izleyici · calibrate · aktif pencere
-bağlamı · `look` · **öğrenen hafıza**: `review` + `memory`).
+**Tüm planlı fazlar (0-5) tamamlandı:** tepsi · otomatik başlatma · cevap
+penceresi · teach/walls · pasif tespit v2 · pano izleyici · calibrate · aktif
+pencere bağlamı · `look` · öğrenen hafıza (`review` + `memory`) · **siber
+güvenlik modu** (`box`).
+
+**Siber güvenlik modu (Faz 5):** Bir hedefe karşı `nmap`/`gobuster` çalıştırınca
+All Eye **kendiliğinden** box moduna geçer. Varsayılan **ipucu verir**, çözümü
+değil — ama sorunun niyetinden ("tam çözüm ver", "nasıl root olurum") **tam
+çözümü istediğini anlar** ve verir. nmap/gobuster çıktısını yapılandırıp
+**"neyi denemedin"** (bulunan ama dokunulmayan portlar/yollar) gösterir. Hızlı
+kalır — ağır modele gitmez.
 
 `alleye review` akademik literatüre dayanıyor: **Error Quotient** (Jadud 2006,
-algoritma birinci elden doğrulandı) ve **"gaming the system"** bulgusu (Baker
-ve ark. — ipucu sistemini cevap almak için kullananlar 2/3 kadar öğreniyor).
-Ayrıntı ve dürüst sınırlar: [ROADMAP > Araştırma dayanağı](ROADMAP.md).
+algoritma birinci elden doğrulandı) ve **"gaming the system"** (Baker ve ark. —
+ipucu sistemini cevap almak için kullananlar 2/3 kadar öğreniyor). Ayrıntı ve
+dürüst sınırlar: [ROADMAP > Araştırma dayanağı](ROADMAP.md).
 
-Sıradaki iş: Faz 5 — siber güvenlik modu (HTB/CTF için özelleşmiş mentor).
+Sıradaki (öneri): Faz 6 — masaüstü farkındalığı (metaveriyle, "PC'nin üst zekası").

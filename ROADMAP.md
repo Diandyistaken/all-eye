@@ -34,6 +34,7 @@ Son güncelleme: 2026-07-24
 | Aktif pencere bağlamı | ✅ | `Bundle.window`, her `ask`'te (Faz 3.1) |
 | Öğrenen hafıza | ✅ | `review` — konu kümeleme + EQ + ayna (Faz 4) |
 | Hafıza taşınabilirliği | ✅ | `memory export/import`, veri kaybı yok (Faz 4.4) |
+| Siber güvenlik modu | ✅ | otomatik pentest tespiti + niyet algısı + neyi denemedin (Faz 5) |
 | Ekran görüntüsü + onay | ✅ | `alleye look`, varsayılan KAPALI, çift kapı (Faz 3.2) |
 | Gemini vision | ✅ | `inlineData`, Router vision-farkında (Faz 3.2) |
 
@@ -47,6 +48,13 @@ ertelendi (yerine pano izleyici).
 **Faz 3 tamamlandı (2026-07-25)** — aktif pencere bağlamı + `alleye look`
 (görüntü + onay + Gemini vision), peer-ajan modeli, 286 test yeşil. OCR sır
 taraması ertelendi (bağımlılık); yerine zorunlu insan onayı.
+
+**Faz 4 tamamlandı (2026-07-25)** — öğrenen hafıza (`review` + `memory`),
+akademik literatüre dayalı (Error Quotient, gaming-the-system), 311 test.
+
+**Faz 5 tamamlandı (2026-07-25)** — siber güvenlik modu: otomatik pentest
+tespiti + niyet algısı (ipucu↔tam çözüm) + "neyi denemedin", 343 test yeşil.
+**Tüm planlı fazlar (0-5) bitti.**
 
 **Bağımsız denetim (2026-07-25):** fact-checker ajanı Faz 1-2'nin 15 iddiasını
 tek tek doğruladı — hepsi VERIFIED, kırık bir şey yok. Denetim sırasında
@@ -307,22 +315,83 @@ bağımlılık + **pasif** takılma tespiti + kişisel duvar hafızası + kendi 
 
 ---
 
-## Faz 5 — Siber güvenlik modu
+## Faz 5 — Siber güvenlik modu ✅ (2026-07-25)
 
 **Amaç:** HackTheBox / CTF için özelleşmiş mentor. Projenin başlangıç sebebi.
 
-**Tahmini:** 2-3 oturum
+**Kullanıcı vizyonu (bu oturumda netleşti):** "Bir HTB kutusuna saldırmaya
+başladığımda All Eye bunu **kendiliğinden anlasın**, çözümü vermesin — ipucu
+versin. Ama tam çözümü istediğimi (nasıl sorduğumdan) anlasın ve versin.
+**Hızlı** olsun." Faz 5 tam olarak bunu uyguluyor.
 
-- [ ] `alleye box start <isim>` — hedef IP, kapsam, notlar için oturum
-- [ ] nmap / gobuster / ffuf çıktısını **yapılandırılmış** ayrıştır
-      (ham metin yerine: açık portlar, servisler, sürümler, bulunan yollar)
-- [ ] "Neyi denemedin" analizi — bulunan yüzeylerden dokunulmayanlar
-- [ ] Kademe kuralı sıkılaştır: flag ve tam exploit zinciri **asla** kademe
-      1-2'de açılmaz; kademe 3'te bile önce kavramı anlatır
-- [ ] `alleye box report` — çözdüğün kutunun kendi writeup'ı, senin notlarınla
+- [x] `alleye box start <isim> [--target IP]` · `box status` · `box report [dosya]`
+      · `box ask` — hedef otomatik yakalanır (nmap çalışınca)
+- [x] nmap / gobuster / ffuf / feroxbuster çıktısını **yapılandırılmış** ayrıştır
+      (`box.parse_nmap`, `box.parse_web_paths`) — açık portlar, servisler,
+      sürümler, bulunan yollar
+- [x] **"Neyi denemedin"** analizi (`box.untouched`) — bulunduktan sonra hiçbir
+      komutta geçmeyen yüzeyler; sıralama-duyarlı (keşiften önceki dokunma sayılmaz)
+- [x] **Otomatik bağlam tespiti** (`box.is_pentest_context`) — bir hedefe karşı
+      pentest aracı sezilince `ask`/kısayol/pencere yolu **kendiliğinden** box
+      moduna geçer (`config.box.auto_detect`, kapatılabilir)
+- [x] **Niyet algısı** (`box.infer_level`) — soru "tam çözüm ver / nasıl root
+      olurum / exploit" derse doğrudan kademe 3; "ipucu / takıldım" ya da boş
+      (kısayol) ise kademe 1. Kullanıcının vizyonunun kalbi.
+- [x] Kademe kuralı sıkılaştı: flag ve tam exploit **asla** kademe 1-2'de
+      açılmaz; kademe 3 önce kavramı söyler sonra komutu (`mentor.box_system_prompt`)
+- [x] **HIZLI:** box modu ağır modele gitmez (`deep=False`), lite kalır — "oturup
+      düşünmesin" isteği
+- [x] `alleye box report [dosya]` — bulgular + denenmemiş yüzeyler + kendi notların
 
-**Bitti kriteri:** Bir HTB kutusunu All Eye ile çöz, hiçbir writeup açma,
-sonunda `alleye box report` kendi öğrenme kaydını çıkarsın.
+**Bitti kriteri:** ✅ Otomatik tespit, niyet algısı, "neyi denemedin", oturum
+yönetimi canlı doğrulandı (43 test). Gerçek bir HTB kutusunda uçtan uca akış
+(model cevabı) senin makinende denenmeli — model çağrısı bu ortamda kota harcar.
+
+**Kademe kuralı — kullanıcı yetkisi:** HTB/CTF **yetkili** bir laboratuvardır
+(kullanıcının kendi indirdiği hedef). Tam çözüm açıkça istendiğinde vermek
+meşrudur; kural pedagoji içindir (öğrenmeyi bozmamak), reddetmek için değil.
+
+**Araştırma dayanağı:** pentest metodolojisi keşif→enumerasyon→sömürü→yetki
+yükseltme; "yüzeyleri genişlemesine tara, sonra derinlemesine sömür" — "neyi
+denemedin" tam da bu genişlemesine taramanın boşluklarını gösterir (arxiv
+2602.17622, pentest metodoloji kaynakları). Kademeli ipucu + gaming dayanağı
+Faz 4 araştırma bölümünde.
+
+---
+
+## Faz 6 — Masaüstü farkındalığı (öneri · "PC'nin üst zekası")
+
+**Kullanıcı vizyonu:** "All Eye terminalde kalmasın; PC'min üst zekası olsun.
+Her şeyi görsün duysun ama önemli anları / ona ihtiyaç duyduğumda devreye girsin."
+
+**Gerginlik ve çözüm:** "Her şeyi gör" = sürekli ekran görüntüsü + ses = pip
+bağımlılığı + kota + en büyük gizlilik yüzeyi. Ama projenin kurucu fikri çıkışı
+söylüyor: *"piksel pahalı ve eksik; asıl kaynak daha iyi."* Masaüstünü **pikselle
+değil metaveriyle** görürüz — sıfır bağımlılık, ekran görüntüsü yok, kota yok.
+
+### 6.1 Metaveri tabanlı masaüstü izleyici (model çağrısı YOK)
+- [ ] Aktif pencere zaman serisi: hangi uygulamada ne kadar kaldın
+      (`context.active_window()` var, sadece örnekleme + kayıt yok)
+- [ ] Uygulama arası gidip gelme: IDE↔tarayıcı↔terminal döngüsü = klasik takılma
+- [ ] Boşta kalma süresi: Win32 `GetLastInputInfo` (bedava, ctypes)
+- [ ] Son değişen dosyalar zaten var (`context.recent_files`); zaman serisine bağla
+- [ ] Hepsi ~birkaç KB metaveri; ekran görüntüsü/ses YOK
+
+### 6.2 "Önemli an" motoru
+- [ ] Terminal dışı takılma sinyali: aynı tarayıcı sekmesine uzun bakma +
+      IDE'ye dönüp hemen geri gitme = "cevabı bulamıyor" deseni
+- [ ] Eşikler `calibrate` altyapısıyla kişiye göre ayarlanır
+- [ ] Tepsi balonu (Faz 2) ile sessiz haber — daemon asla pencere açmaz kuralı
+
+### 6.3 Sesi bağımlılıksız yeniden düşün (opsiyonel)
+- [ ] openWakeWord hâlâ dışarıda; ama Windows'un yerleşik SAPI/WinRT ses
+      tanıma API'si ctypes ile denenebilir — araştırma gerekir
+
+**Bitti kriteri:** Terminale hiç dokunmadan, bir tarayıcı/IDE oturumunda
+takıldığında All Eye bunu metaveriden fark edip sessizce haber versin.
+
+**Karar bekliyor:** Bu faz kullanıcının "üst zeka" vizyonuna en yakın olan.
+Faz 5 (siber) bittiği için sıradaki mantıklı adım bu olabilir.
 
 ---
 
@@ -360,6 +429,7 @@ alleye/
 ├── clipboard.py         ✅ Faz 2.1  pano izleyici (ctypes, hata-arama sinyali)
 ├── calibrate.py         ✅ Faz 2.1  yanlış alarm oranı + eşik ayarı
 ├── review.py            ✅ Faz 4    konu kümeleme · EQ · ayna · alıştırma
+├── box.py               ✅ Faz 5    pentest tespiti · nmap/gobuster ayrıştırma · niyet · neyi denemedin
 ├── vision.py            ✅ Faz 3.2  pencere görüntüsü + PNG + önizleme/onay
 ├── voice.py             ⏸️ Faz 2.2  openWakeWord — ertelendi (pip bağımlılığı)
 └── box.py               ⬜ Faz 5    HTB oturum yönetimi
@@ -423,5 +493,5 @@ Neden böyle yapıldığını unutmamak için. Bunlar tartışılıp karara bağ
 3. Faz bitince bu dosyada işaretle, karar günlüğüne yeni kararları ekle
 4. Sonraki faza geçmeden teknik borç listesine bak
 
-Sıradaki iş: **Faz 5 — siber güvenlik modu** (Faz 1-4 tamamlandı).
-Projenin başlangıç sebebi buydu; artık altyapı hazır.
+**TÜM FAZLAR TAMAMLANDI (0-5).** Sıradaki iş kalan teknik borç + kullanıcının
+"PC'nin üst zekası" vizyonu için önerilen Faz 6 (masaüstü farkındalığı, aşağıda).

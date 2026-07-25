@@ -8,7 +8,7 @@ import os
 import sys
 import time
 
-from alleye import __version__, config, context, detect, journal, mentor, store, ui
+from alleye import __version__, box, config, context, detect, journal, mentor, store, ui
 from alleye.brain import Router, available
 from alleye.brain.providers import ProviderError
 
@@ -46,6 +46,31 @@ def cmd_ask(args: argparse.Namespace) -> int:
     level = max(1, min(3, args.level))
     rendered = context.render(b, question)
 
+    # Faz 5: pentest baglami sezildiyse (bir hedefe karsi nmap/gobuster gibi
+    # araclar) box moduna gec - ipucu-oncelikli, "neyi denemedin" farkindaligiyla,
+    # ve HIZLI (agir modele gitmez). Kisayola basmak da buraya duser, yani
+    # kullanici sadece Ctrl+Alt+E'ye basinca da bu devreye girer.
+    box_mode = getattr(args, "box", False) or (
+        cfg.get("box", {}).get("auto_detect", True)
+        and box.is_pentest_context(b.turns))
+    box_extra = box_phase = ""
+    if box_mode:
+        target = box.find_target(b.turns)
+        findings = box.collect_findings(b.turns)
+        untried = box.untouched(findings, b.turns)
+        box_phase = box.phase(findings, b.turns)
+        box_extra = box.render_box(target, findings, untried, box_phase)
+        active = store.box_active(con)
+        if active is not None:
+            store.box_record_findings(con, active["name"], findings)
+            if target and not active["target"]:
+                store.box_set_target(con, active["name"], target)
+        # Niyet: kullanici tam cozumu ACIKCA istiyorsa (nasil sordugundan) dogrudan
+        # o kademeye atla; yoksa ipucu-oncelikli (kademe 1) kal. Kullanici hiz
+        # istiyor - gereksiz tur attirmayalim.
+        if question:
+            level = max(level, box.infer_level(question, default=1))
+
     # Bu duvari daha once kendisi cozup not birakmissa (alleye teach), mentorun
     # cevabindan ONCE kendi notunu goster - kendi ogrendigin en iyi cevaptir.
     if b.user_note:
@@ -55,16 +80,25 @@ def cmd_ask(args: argparse.Namespace) -> int:
         ui.rule()
 
     while True:
-        ui.banner(mentor.header(b, level))
-        if b.signals and level == 1:
+        head = mentor.header(b, level)
+        ui.banner(f"box · {head}" if box_mode else head)
+        if b.signals and level == 1 and not box_mode:
             for s in b.signals[:3]:
                 ui.note(str(s))
             ui.rule()
 
         prog = ui.Progress()
-        router = Router(cfg, only=args.provider, notify=prog.set, deep=level >= 3)
-        sys_p = mentor.system_prompt(level, cfg["language"])
-        usr_p = mentor.user_prompt(rendered, level, question)
+        if box_mode:
+            # Box modu HIZ ister: agir modele gitme (deep=False), lite kalir.
+            router = Router(cfg, only=args.provider, notify=prog.set, deep=False)
+            sys_p = mentor.box_system_prompt(level, cfg["language"], box_phase)
+            usr_p = mentor.user_prompt(
+                rendered + "\n\n" + box_extra, level,
+                question or "Bu hedefte siradaki adim ne? Once denemedigim yuzeylere bak.")
+        else:
+            router = Router(cfg, only=args.provider, notify=prog.set, deep=level >= 3)
+            sys_p = mentor.system_prompt(level, cfg["language"])
+            usr_p = mentor.user_prompt(rendered, level, question)
 
         prog.set("baglam gonderiliyor")
         prog.start()
@@ -95,6 +129,10 @@ def cmd_ask(args: argparse.Namespace) -> int:
             question = reply
             b = context.build(con=None)
             rendered = context.render(b, question)
+            # Box modunda takip sorusu da niyet tasir: "tam cozum ver" derse
+            # dogrudan kademe 3'e atla.
+            if box_mode:
+                level = max(level, box.infer_level(reply, default=level))
         elif level < 3:
             level += 1
         else:
@@ -547,6 +585,108 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
+# --------------------------------------------------------------------- box ---
+
+def cmd_box(args: argparse.Namespace) -> int:
+    """Siber guvenlik modu (Faz 5): kutu oturumu baslat / durum / rapor / sor."""
+    ui.init()
+    con = store.connect()
+    action = args.box_action
+
+    if action == "ask":
+        # Box modunu ZORLA (baglam sezilemese bile) ve normal ask akisina devret.
+        args.question = args.rest
+        args.box = True
+        if not hasattr(args, "trigger"):
+            args.trigger = "box"
+        return cmd_ask(args)
+
+    if action == "start":
+        name = args.name
+        target = args.target or ""
+        store.box_start(con, name, target=target, scope=args.scope or "")
+        ui.banner(f"kutu: {name}")
+        ui.ok("oturum baslatildi ve etkin")
+        if target:
+            ui.note(f"hedef: {target}")
+        else:
+            ui.note("hedef henuz yok - nmap calistirinca kendiliginden yakalanir")
+        ui.rule()
+        ui.note("artik `ctrl+alt+e` ya da `alleye` box moduna gecer:")
+        ui.note("  ipucu icin sadece sor · tam cozum istersen 'tam cozum ver' de")
+        return 0
+
+    # status ve report icin etkin oturum lazim
+    active = store.box_active(con)
+    turns = journal.read(limit=args.history if hasattr(args, "history") else 400)
+
+    if action == "status":
+        if active is None:
+            ui.banner("kutu")
+            ui.warn("etkin kutu oturumu yok -  alleye box start <isim>")
+            if box.is_pentest_context(turns):
+                tgt = box.find_target(turns) or "(bilinmiyor)"
+                ui.note(f"ama pentest baglami sezdim (hedef {tgt}) - box modu yine calisir")
+            return 0
+        name = active["name"]
+        # Journal'dan taze yuzeyleri de kaydet (arada arac calistirilmis olabilir)
+        found = box.collect_findings(turns)
+        store.box_record_findings(con, name, found)
+        rows = store.box_findings(con, name)
+        untried = box.untouched(found, turns)
+
+        ui.banner(f"kutu: {name}")
+        ui.note(f"hedef: {active['target'] or '(yok)'} · asama: {box.phase(found, turns)}")
+        ui.rule()
+        ports = [r for r in rows if r["kind"] == "port"]
+        paths = [r for r in rows if r["kind"] == "path"]
+        ui.note(f"{len(ports)} port · {len(paths)} yol bulundu")
+        if untried:
+            ui.rule()
+            ui.warn(f"henuz denemedigin {len(untried)} yuzey:")
+            for f in untried[:10]:
+                d = f" - {f.detail}" if f.detail else ""
+                ui.note(f"  {f.kind}: {f.value}{d}")
+            ui.note("bunlari sormak icin:  alleye box ask")
+        return 0
+
+    if action == "report":
+        if active is None:
+            ui.error("etkin kutu oturumu yok")
+            return 1
+        name = active["name"]
+        found = box.collect_findings(turns)
+        store.box_record_findings(con, name, found)
+        rows = store.box_findings(con, name)
+        lines = [
+            f"# {name} - writeup",
+            f"hedef: {active['target'] or '(yok)'}",
+            f"asama: {box.phase(found, turns)}",
+            "",
+            "## acik portlar / servisler",
+        ]
+        lines += [f"- {r['value']}: {r['detail']}" for r in rows if r["kind"] == "port"] or ["(yok)"]
+        lines += ["", "## bulunan yollar"]
+        lines += [f"- {r['value']} ({r['detail']})" for r in rows if r["kind"] == "path"] or ["(yok)"]
+        untried = box.untouched(found, turns)
+        if untried:
+            lines += ["", "## denenmemis yuzeyler (acik kalan)"]
+            lines += [f"- {f.kind}: {f.value}" for f in untried]
+        if active["notes"]:
+            lines += ["", "## notlarin", active["notes"].rstrip()]
+        report = "\n".join(lines)
+        if args.file:
+            from pathlib import Path
+            Path(args.file).write_text(report, encoding="utf-8")
+            ui.banner(f"kutu: {name}")
+            ui.ok(f"writeup yazildi: {args.file}")
+        else:
+            print(report)
+        return 0
+
+    return 0
+
+
 # ------------------------------------------------------------------ review ---
 
 def cmd_review(args: argparse.Namespace) -> int:
@@ -754,6 +894,7 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--once", action="store_true", help="tek cevap ver, kademe sorma")
     a.add_argument("--provider", help="belirli bir saglayiciyi zorla (gemini/groq/ollama)")
     a.add_argument("--trigger", default="manual", help=argparse.SUPPRESS)
+    a.add_argument("--box", action="store_true", help=argparse.SUPPRESS)
     a.set_defaults(func=cmd_ask)
 
     s = sub.add_parser("status", help="sinyalleri ve hafizayi goster")
@@ -803,6 +944,23 @@ def build_parser() -> argparse.ArgumentParser:
     wl.add_argument("--limit", type=int, default=15, help="kac duvar gosterilsin")
     wl.set_defaults(func=cmd_walls)
 
+    bx = sub.add_parser("box", help="siber guvenlik modu: HTB/CTF kutu oturumu")
+    bxs = bx.add_subparsers(dest="box_action")
+    bs = bxs.add_parser("start", help="yeni kutu oturumu baslat")
+    bs.add_argument("name", help="kutu adi (orn: forest)")
+    bs.add_argument("--target", help="hedef IP/host (bos birakilirsa otomatik yakalanir)")
+    bs.add_argument("--scope", help="kapsam notu")
+    bxs.add_parser("status", help="oturum durumu + denenmemis yuzeyler")
+    br = bxs.add_parser("report", help="oturumun writeup'ini cikar")
+    br.add_argument("file", nargs="?", help="dosya (bos = ekrana bas)")
+    ba = bxs.add_parser("ask", help="kutu baglaminda sor (box modunu zorlar)")
+    ba.add_argument("rest", nargs="*", help="soru")
+    ba.add_argument("-l", "--level", type=int, default=1)
+    ba.add_argument("--once", action="store_true")
+    ba.add_argument("--provider")
+    ba.set_defaults(trigger="box")
+    bx.set_defaults(func=cmd_box, box_action=None)
+
     rv = sub.add_parser("review", help="haftalik ayna: nerede vakit kaybediyorsun")
     rv.add_argument("--days", type=int, default=7, help="kac gunluk pencere")
     rv.add_argument("--history", type=int, default=500, help="taranacak komut sayisi")
@@ -836,7 +994,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     known = {"ask", "status", "doctor", "install", "watch", "key", "forget",
              "autostart", "teach", "walls", "calibrate", "look",
-             "review", "memory",
+             "review", "memory", "box",
              "-h", "--help", "--version"}
     # Ciplak `alleye` veya `alleye neden calismiyor` -> ask varsayilani
     if not argv or argv[0] not in known:
