@@ -148,6 +148,70 @@ def stats(con: sqlite3.Connection) -> dict:
     return {"asks": a, "walls": w, "resolved": r}
 
 
-def export_json(con: sqlite3.Connection) -> str:
+def export_json(con: sqlite3.Connection, redact_notes: bool = True) -> str:
+    """Duvarlari disa aktar (Faz 4.4). Notlar kullanicinin yazdigi SERBEST
+    METIN - sir icerebilir, o yuzden varsayilan olarak redaksiyondan gecer."""
     rows = [dict(r) for r in con.execute("SELECT * FROM walls ORDER BY hits DESC")]
+    if redact_notes:
+        from alleye import redact as _redact
+        for r in rows:
+            if r.get("note"):
+                r["note"] = _redact.redact(r["note"])[0]
     return json.dumps(rows, indent=2, ensure_ascii=False)
+
+
+def import_json(con: sqlite3.Connection, text: str) -> dict:
+    """Disa aktarilmis duvarlari ice al. VERI KAYBI YOK.
+
+    Cakisma kurallari (makine degistirince gecmis kaybolmasin):
+      - ayni imza varsa `hits` TOPLANIR (iki makinede de carpmissin)
+      - mevcut not doluysa KORUNUR; bossa gelen not yazilir
+      - `resolved` OR'lanir (bir yerde cozduysen cozulmustur)
+      - `first_ts` en eski, `last_ts` en yeni kazanir
+    Don: {"eklenen": N, "birlesen": M, "atlanan": K}
+    """
+    try:
+        rows = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"gecersiz JSON: {exc}") from None
+    if not isinstance(rows, list):
+        raise ValueError("beklenen bicim: duvar listesi (JSON dizisi)")
+
+    added = merged = skipped = 0
+    for r in rows:
+        if not isinstance(r, dict):
+            skipped += 1
+            continue
+        sig = (r.get("signature") or "").strip()
+        if not sig:
+            skipped += 1
+            continue
+        hits = int(r.get("hits") or 1)
+        first_ts = float(r.get("first_ts") or time.time())
+        last_ts = float(r.get("last_ts") or first_ts)
+        cmd = r.get("cmd") or ""
+        note = r.get("note") or ""
+        resolved = 1 if r.get("resolved") else 0
+
+        cur = con.execute(
+            "SELECT hits, first_ts, last_ts, note, resolved FROM walls WHERE signature=?",
+            (sig,)).fetchone()
+        if cur is None:
+            con.execute(
+                "INSERT INTO walls (signature, first_ts, last_ts, hits, cmd, resolved, note)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (sig, first_ts, last_ts, hits, cmd, resolved, note or None))
+            added += 1
+        else:
+            con.execute(
+                "UPDATE walls SET hits=?, first_ts=?, last_ts=?, resolved=?, note=?"
+                " WHERE signature=?",
+                (int(cur["hits"]) + hits,
+                 min(float(cur["first_ts"]), first_ts),
+                 max(float(cur["last_ts"]), last_ts),
+                 1 if (cur["resolved"] or resolved) else 0,
+                 cur["note"] or note or None,
+                 sig))
+            merged += 1
+    con.commit()
+    return {"eklenen": added, "birlesen": merged, "atlanan": skipped}

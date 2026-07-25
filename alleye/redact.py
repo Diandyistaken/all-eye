@@ -33,6 +33,14 @@ _RULES: list[tuple[str, re.Pattern[str], int]] = [
         r"(?im)^\s*(?:export\s+|set\s+|\$env:)?"
         r"([A-Z0-9_]*(?:PASS(?:WORD)?|SECRET|TOKEN|APIKEY|API_KEY|PRIVKEY|CREDENTIAL)[A-Z0-9_]*)"
         r"\s*[:=]\s*(\S+)"), 2),
+    # Satir ortasindaki KEY=VALUE. env-secret `^` ile satir basina bagli (.env
+    # dosyalari icin dogru) ama kullanicinin `alleye teach` ile yazdigi NOTLAR
+    # duzyazidir: "cozum: DB_PASSWORD=xyz kullan". Bu notlar `memory export`
+    # ile disari cikabildigi icin ayri bir kural sart. `«` ile baslayan degeri
+    # atlar - zaten maskelenmis bir yeri tekrar maskelemeyelim.
+    ("inline-secret", re.compile(
+        r"(?i)\b([A-Za-z0-9_]*(?:PASS(?:WORD)?|SECRET|TOKEN|APIKEY|API_KEY|"
+        r"PRIVKEY|CREDENTIAL)[A-Za-z0-9_]*)\s*[:=]\s*((?!«)\S+)"), 2),
     ("cli-password", re.compile(r"(?i)(--password[=\s]+|--pass[=\s]+)(\S+)"), 2),
     # Kisa -p bayragi SADECE parola alan araclarin yaninda maskelenir.
     # Yoksa "nmap -p-" veya "nmap -p80,443" yanlislikla silinir - o cikti bize lazim.

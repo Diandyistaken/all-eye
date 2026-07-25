@@ -50,6 +50,7 @@ PowerShell/bash hook  →  journal.jsonl  →  detect.analyze()  →  context.bu
 | `autostart.py` | Startup `.lnk` | PowerShell WScript.Shell (pywin32 yok) |
 | `calibrate.py` | eşik kalibrasyonu | `--apply` sadece değişen anahtarı yazar |
 | `clipboard.py` | pano izleyici | hata kopyalanınca sinyal; buluta gitmez |
+| `review.py` | öğrenen hafıza (Faz 4) | konu kümeleme · **EQ** (Jadud uyarlaması) · dip-cevap aynası · alıştırma |
 | `ui.py` | konsol HUD | `_fix_encoding()` — boru/dosyada çökmeyi önler |
 
 ## Tuzaklar (her biri bir kez sessizce bozdu — tekrar açma)
@@ -71,6 +72,11 @@ PowerShell/bash hook  →  journal.jsonl  →  detect.analyze()  →  context.bu
    Dönüş değerine güvenme, gerçek piksele bak (`vision._dib_blank`).
 10. **Boru/dosyaya yazarken yerel kod sayfası** `◉`/`─` yüzünden komutu
     çökertir → `ui._fix_encoding()`.
+11. **`redact` env-secret kuralı `^`'a bağlı** — düzyazı not içindeki
+    `DB_PASSWORD=xyz` kaçıyordu. `inline-secret` kuralı bunu kapatıyor;
+    `memory export` notları buradan geçer.
+12. **Konu kuralında sıra:** hata MESAJI komut ADINI yener
+    (`ssh: permission denied` → ağ değil **izin**).
 
 ## Test ağı
 ```bash

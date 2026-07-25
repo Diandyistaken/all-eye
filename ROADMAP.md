@@ -32,6 +32,8 @@ Son güncelleme: 2026-07-24
 | calibrate | ✅ | yanlış alarm oranı + eşik ayarı (Faz 2.1) |
 | Tepsi balonu | ✅ | sinyalde sessiz "takıldın gibi" bildirimi |
 | Aktif pencere bağlamı | ✅ | `Bundle.window`, her `ask`'te (Faz 3.1) |
+| Öğrenen hafıza | ✅ | `review` — konu kümeleme + EQ + ayna (Faz 4) |
+| Hafıza taşınabilirliği | ✅ | `memory export/import`, veri kaybı yok (Faz 4.4) |
 | Ekran görüntüsü + onay | ✅ | `alleye look`, varsayılan KAPALI, çift kapı (Faz 3.2) |
 | Gemini vision | ✅ | `inlineData`, Router vision-farkında (Faz 3.2) |
 
@@ -214,52 +216,94 @@ kare gönderir. Bu yüzden her denemeden sonra **gerçek piksellere** bakılıyo
 **Amaç:** "Bu duvara 4. kez çarpıyorsun"u, "sen bu konuda hep şurada
 takılıyorsun"a çevirmek.
 
-**Tahmini:** 1-2 oturum · **Yeni dosya:** `alleye/review.py`
+## ✅ TAMAMLANDI (2026-07-25) · **Yeni dosya:** `alleye/review.py`
+
+**Literatüre dayandırıldı.** Faz 4'e başlamadan önce akademik tarama yapıldı;
+kullanılan bulgular ve doğrulama biçimi aşağıda (Araştırma dayanağı bölümü).
 
 **Neden şimdi:** Faz 0-3'te veri toplandı (journal + `walls` + `asks`). Şimdiye
 kadar hafıza *sayıyordu*; Faz 4 onu *yorumluyor*. Model çağrısı gerektirmeyen
 kısmı önce yap — ucuz, hızlı, çevrimdışı çalışır.
 
-### 4.1 Konu kümeleme (model çağrısı YOK)
-Duvar imzaları zaten `komut::hata` biçiminde. Kural tabanlı sınıflandırma
-yeterli; LLM'e sormak hem yavaş hem gereksiz.
+### 4.1 Konu kümeleme (model çağrısı YOK) ✅
+- [x] `review.topic_of(signature)` — SAF, kural tabanlı: `izin/kimlik` ·
+      `bağımlılık/paket` · `sözdizimi/tip` · `ağ/port` · `git` ·
+      `docker/konteyner` · `derleme/yapı` · `test` · `dosya/yol` · `diğer`
+- [x] `walls` tablosuna `topic` kolonu **eklenmedi** — imzadan türetilebilir,
+      şema değişikliği geri alınamaz
+- [x] **Kural sırası dersi:** hata MESAJI komut ADINI yener.
+      `ssh: permission denied` bir ağ değil **izin** sorunudur; ilk sürümde
+      `ssh` deseni öne geldiği için yanlış konuya düşüyordu, test yakaladı.
 
-- [ ] `review.topic_of(signature) -> str` — SAF fonksiyon, kural listesi:
-      `git` · `ağ/port` · `izin` · `bağımlılık/modül` · `sözdizimi` · `dosya-yolu`
-      · `docker` · `derleme` · `diğer`
-- [ ] `store`'a `topic` kolonu **ekleme** — imzadan türetilebilir, şema
-      değiştirmek geri alınamaz; türetilmiş veriyi diske yazmıyoruz
+### 4.2 `alleye review` — haftalık ayna ✅
+- [x] `review.summarize(con, turns, days)` — konu dağılımı, duvar/çözülmüş,
+      açık tekrar edenler, EQ ve önceki döneme göre EQ trendi
+- [x] `alleye review [--days N] [--history N] [--top N]`
+- [x] Rapor **sayı değil cümle** üretiyor (`review.sentences()`)
+- [x] **Error Quotient (EQ)** — Jadud 2006 uyarlaması, aşağıda
 
-### 4.2 `alleye review` — haftalık ayna
-- [ ] `review.summarize(con, days=7) -> dict`: en çok çarpılan 3 konu, toplam
-      duvar, çözülmüş oranı, en uzun süren tıkanma, `teach` ile kapatılanlar
-- [ ] `alleye review [--days 30] [--topic git]` — konsol raporu
-- [ ] Rapor **sayı değil cümle** üretsin: "bu hafta 4 saatinin 3'ü ağ/port
-      konusunda geçti; 3 duvarın 2'sini kendin çözdün, 1'i hâlâ açık"
+### 4.3 Alıştırma önerisi ✅ (model çağrısı YOK — planı iyileştirdik)
+- [x] Açık kalmış tekrar eden duvar için **kendine-soru** (`practice_hint`)
+- [x] Kademe kuralına sadık: soru düşündürür, komutu/çözümü **vermez** (testli)
+- [x] Konuya göre şablon → tamamen çevrimdışı, kota harcamaz
+- **Plandan sapma:** başta "model çağrısı VAR, opsiyonel" yazıyordu. Şablon
+      yaklaşımı hem bedava hem çevrimdışı hem öngörülebilir; ITS literatüründeki
+      "gaming tespit edilince ek materyal ver" desenini bağımlılıksız karşılıyor.
 
-### 4.3 Alıştırma önerisi (model çağrısı VAR, opsiyonel)
-- [ ] Tekrar eden ve **çözülmemiş** duvarlar için 3-5 satırlık mini alıştırma
-- [ ] Kademe kuralına sadık: alıştırma çözümü vermez, yaptırır
-- [ ] `--no-ai` bayrağıyla tamamen çevrimdışı çalışabilmeli
+### 4.4 Hafıza taşınabilirliği ✅
+- [x] `alleye memory export [dosya.json]` · `alleye memory import <dosya.json>`
+- [x] Çakışmada `hits` **toplanır**, mevcut `note` **korunur**, `resolved`
+      OR'lanır, `first_ts` en eski / `last_ts` en yeni → **veri kaybı yok**
+- [x] Export'ta notlar **redaksiyondan geçer** (`--raw` ile kapatılabilir)
+- [x] **Redaksiyon açığı bulundu ve kapatıldı:** `env-secret` kuralı `^` ile
+      satır başına bağlıydı; `teach` notları düzyazıdır
+      ("cozum: DB_PASSWORD=xyz kullan") ve sır **maskelenmeden export
+      ediliyordu**. Yeni `inline-secret` kuralı eklendi.
 
-### 4.4 Hafıza taşınabilirliği
-- [ ] `alleye memory export [dosya.json]` — `store.export_json()` zaten var
-- [ ] `alleye memory import <dosya.json>` — imza çakışırsa `hits` topla,
-      `note` doluysa koru (veri kaybı yok)
-- [ ] Export'tan önce redaksiyon: notlar kullanıcının yazdığı serbest metin,
-      sır içerebilir → `redact.redact()` geçir
+**Bitti kriteri:** ✅ `alleye review` çalışıyor ve veri azken **uydurmuyor**
+("henüz yeterli veri yok" diyor); `memory export` → `import` çalıştı, çarpma
+sayıları toplandı, notlar korundu (canlı doğrulandı).
 
-**Bitti kriteri:** Bir ay kullandıktan sonra `alleye review` sana kendin
-hakkında bilmediğin bir şey söylesin; `memory export` → başka makinede
-`memory import` → duvar geçmişi ve notlar korunmuş olsun.
+---
 
-**Riskler / dikkat:**
-- Az veriyle rapor yanıltıcı olur → 10'dan az duvar varsa "henüz yeterli veri
-  yok" de, uydurma
-- `asks.answer` uzun metinler tutuyor; rapor bunları modele geri göndermesin
-  (bütçe patlar) — sadece imza/konu/sayı kullan
-- Kümeleme kuralları İngilizce hata mesajlarına göre yazılmalı, Türkçe
-  yerelleştirilmiş çıktılar da olabilir (`hata`, `bulunamadı`)
+## Araştırma dayanağı (Faz 4 öncesi literatür taraması)
+
+**Error Quotient (Jadud 2006)** — ardışık derleme olaylarını çiftler halinde
+puanlayıp [0,1] "debelenme" skoru üretir. Algoritma birinci elden doğrulandı
+(Villamor 2020 incelemesi, Fig. 1-2):
+
+| Koşul | Puan |
+|---|---|
+| İki ardışık olay da hata verdi | +2 |
+| Aynı hata tipi | +3 |
+| Aynı hata konumu | +3 |
+| Aynı düzenleme konumu | +1 |
+| | **/9**, sonra tüm çiftlerin ortalaması |
+
+Doğrulama: makalenin örneği 2+3+3=8 → 8/9=0.88 → 3 çift → **0.29**. Rakamlar
+tutuyor; testimiz bu örneği birebir yeniden üretiyor.
+
+**Kabuk uyarlamamız:** derleme olayı yok, komut var → aynı hata tipi = aynı
+`fingerprint`, aynı hata konumu = aynı komut, aynı düzenleme konumu = aynı `cwd`.
+
+**Dürüst sınır:** Švábenský ve ark. (ITiCSE 2024) üç metriği karşılaştırdı;
+EQ en iyisi (R²=0.181/0.190) **ama hiçbiri not varyansının %26'sından fazlasını
+açıklamıyor**. Yani EQ **beceri ölçmez**, oturum içi zorlanmayı ölçer — biz de
+onu puan olarak değil **ayna** olarak kullanıyoruz.
+
+**"Gaming the system" (Baker ve ark.)** — ipucu sistemini öğrenmek yerine cevabı
+almak için kullananlar benzerlerinin **yalnızca 2/3'ü kadar** öğreniyor; standart
+müdahale: kullanıcıyı uyar + ek materyal ver. Bizde karşılığı: `asks.level`
+dağılımından **dip-cevap oranı** (`review.stage_stats`). %60'ı aşarsa `review`
+bunu bulguyla birlikte söyler — **engellemez**, ayna tutar (çalışan bir
+geliştiricinin bazen doğrudan çözüme ihtiyacı olması meşru).
+
+**Konumlandırma dürüstlüğü:** kademeli ipucu fikri eşsiz değil — `CodeHelp`
+(CS1 öğrencileri için web aracı) tam çözüm yerine kademeli rehberlik veriyor;
+`TEGCER` (IIT Kanpur) örnek tabanlı geri bildirimle hata çözümünü %25
+hızlandırmış. **Farkımız** bu fikirde değil, bileşiminde: yerel + sıfır
+bağımlılık + **pasif** takılma tespiti + kişisel duvar hafızası + kendi notunu
+öğretebilme. Bunlar bir CS1 web aracında yok.
 
 ---
 
@@ -315,6 +359,7 @@ alleye/
 ├── autostart.py         ✅ Faz 1.2  başlangıçta çalıştır (Startup .lnk)
 ├── clipboard.py         ✅ Faz 2.1  pano izleyici (ctypes, hata-arama sinyali)
 ├── calibrate.py         ✅ Faz 2.1  yanlış alarm oranı + eşik ayarı
+├── review.py            ✅ Faz 4    konu kümeleme · EQ · ayna · alıştırma
 ├── vision.py            ✅ Faz 3.2  pencere görüntüsü + PNG + önizleme/onay
 ├── voice.py             ⏸️ Faz 2.2  openWakeWord — ertelendi (pip bağımlılığı)
 └── box.py               ⬜ Faz 5    HTB oturum yönetimi
@@ -378,4 +423,5 @@ Neden böyle yapıldığını unutmamak için. Bunlar tartışılıp karara bağ
 3. Faz bitince bu dosyada işaretle, karar günlüğüne yeni kararları ekle
 4. Sonraki faza geçmeden teknik borç listesine bak
 
-Sıradaki iş: **Faz 4 — öğrenen hafıza** (Faz 1, 2 ve 3 tamamlandı).
+Sıradaki iş: **Faz 5 — siber güvenlik modu** (Faz 1-4 tamamlandı).
+Projenin başlangıç sebebi buydu; artık altyapı hazır.

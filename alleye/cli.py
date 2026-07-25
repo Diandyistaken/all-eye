@@ -547,6 +547,97 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------------------------------ review ---
+
+def cmd_review(args: argparse.Namespace) -> int:
+    """Haftalik ayna: en cok nerede vakit kaybediyorsun (Faz 4).
+
+    Model cagrisi YOK - hepsi yerel ve aninda. Veri azsa uydurmaz.
+    """
+    from alleye import review
+
+    ui.init()
+    ui.banner(f"ayna · son {args.days} gun")
+    con = store.connect()
+    turns = journal.read(limit=args.history)
+    stats = review.summarize(con, turns, days=args.days)
+
+    for line in review.sentences(stats):
+        ui.note(line)
+
+    stage = review.stage_stats(con)
+    stage_lines = review.stage_sentences(stage)
+    if stage_lines:
+        ui.rule()
+        for line in stage_lines:
+            ui.note(line)
+
+    if stats["enough"]:
+        rows = [t for t in stats["topics"] if t["hits"] or t["failed_commands"]]
+        if rows:
+            ui.rule()
+            ui.note("konu dagilimi (cok carpilandan aza):")
+            for t in rows[: args.top]:
+                eq = f" · EQ {t['eq']:.2f}" if t["eq"] else ""
+                cozum = f" · {t['resolved']} cozulmus" if t["resolved"] else ""
+                ui.note(f"  {t['topic']:<18} {t['hits']}x{eq}{cozum}")
+
+    if stats["open_repeat"]:
+        ui.rule()
+        ui.note("hala acik ve tekrar eden duvarlar:")
+        for sig, hits in stats["open_repeat"]:
+            ui.note(f"  {hits}x  {sig[:58]}")
+        # En cok carpilan acik duvar icin kendine-soru (Faz 4.3). Model YOK.
+        top_sig = stats["open_repeat"][0][0]
+        ui.rule()
+        ui.note("bunu kapatmak icin kendine sor:")
+        ui.note(f"  {review.practice_hint(top_sig)}")
+        ui.note('cevabini yazarsan duvar kapanir:  alleye teach "cozum"')
+    return 0
+
+
+# ------------------------------------------------------------------ memory ---
+
+def cmd_memory(args: argparse.Namespace) -> int:
+    """Duvar hafizasini disa/ice aktar - makine degisince kaybolmasin (Faz 4.4)."""
+    from pathlib import Path
+
+    ui.init()
+    con = store.connect()
+
+    if args.action == "export":
+        # Notlar kullanicinin yazdigi serbest metin; sir icerebilir, varsayilan
+        # olarak redaksiyondan gecer. --raw ile kapatilir (bilincli tercih).
+        text = store.export_json(con, redact_notes=not args.raw)
+        if args.file:
+            Path(args.file).write_text(text, encoding="utf-8")
+            ui.banner("hafiza disa aktarildi")
+            ui.ok(f"yazildi: {args.file}")
+            if not args.raw:
+                ui.note("notlar redaksiyondan gecirildi (--raw ile kapatabilirsin)")
+        else:
+            print(text)
+        return 0
+
+    if not args.file:
+        ui.error("ice aktarilacak dosyayi ver:  alleye memory import hafiza.json")
+        return 1
+    path = Path(args.file)
+    if not path.exists():
+        ui.error(f"dosya yok: {path}")
+        return 1
+    try:
+        res = store.import_json(con, path.read_text(encoding="utf-8-sig"))
+    except ValueError as exc:
+        ui.error(str(exc))
+        return 1
+    ui.banner("hafiza ice aktarildi")
+    ui.ok(f"{res['eklenen']} yeni duvar · {res['birlesen']} birlestirildi "
+          f"· {res['atlanan']} atlandi")
+    ui.note("ayni imzada carpma sayilari toplandi, mevcut notlarin korundu")
+    return 0
+
+
 # -------------------------------------------------------------------- look ---
 
 def cmd_look(args: argparse.Namespace) -> int:
@@ -712,6 +803,19 @@ def build_parser() -> argparse.ArgumentParser:
     wl.add_argument("--limit", type=int, default=15, help="kac duvar gosterilsin")
     wl.set_defaults(func=cmd_walls)
 
+    rv = sub.add_parser("review", help="haftalik ayna: nerede vakit kaybediyorsun")
+    rv.add_argument("--days", type=int, default=7, help="kac gunluk pencere")
+    rv.add_argument("--history", type=int, default=500, help="taranacak komut sayisi")
+    rv.add_argument("--top", type=int, default=6, help="kac konu listelensin")
+    rv.set_defaults(func=cmd_review)
+
+    mem = sub.add_parser("memory", help="duvar hafizasini disa/ice aktar")
+    mem.add_argument("action", choices=["export", "import"])
+    mem.add_argument("file", nargs="?", help="dosya (export'ta bos = ekrana bas)")
+    mem.add_argument("--raw", action="store_true",
+                     help="export'ta notlari redaksiyondan GECIRME")
+    mem.set_defaults(func=cmd_memory)
+
     lk = sub.add_parser("look", help="aktif pencerenin goruntusunu (onayinla) modele sor")
     lk.add_argument("question", nargs="*", help="istege bagli soru")
     lk.add_argument("-l", "--level", type=int, default=1,
@@ -732,6 +836,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     known = {"ask", "status", "doctor", "install", "watch", "key", "forget",
              "autostart", "teach", "walls", "calibrate", "look",
+             "review", "memory",
              "-h", "--help", "--version"}
     # Ciplak `alleye` veya `alleye neden calismiyor` -> ask varsayilani
     if not argv or argv[0] not in known:
